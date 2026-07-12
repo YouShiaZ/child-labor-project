@@ -1,0 +1,590 @@
+// Child Labor Project — Beneficiary record: Details Entry / Progress Reports / Leaving.
+import { useState } from "react";
+import { Link, useParams } from "wouter";
+import {
+  getBeneficiary,
+  updateBeneficiary,
+  computeAge,
+  listReports,
+  createReport,
+  getLeaving,
+  startLeaving,
+  getCurrentProject,
+  fileToDataUrl,
+} from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
+import { EditTextField, EditSelectField } from "@/components/EditField";
+import { SectionCard, StatusPill, HealthPill } from "@/components/ui-bits";
+import {
+  GENDER_LABELS,
+  HEALTH_LABELS,
+  PARENTS_ALIVE_LABELS,
+  LIVE_WITH_LABELS,
+  HOUSE_LABELS,
+  PERFORMANCE_LABELS,
+  LEAVING_REASON_LABELS,
+  SCHOOL_LEVEL_OPTIONS,
+  FAVORITE_SUBJECT_OPTIONS,
+  REPORT_TYPE_LABELS,
+  REPORT_PERIOD_OPTIONS,
+  CYCLE_YEAR_OPTIONS,
+} from "@/lib/options";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { toast } from "sonner";
+import {
+  ChevronLeft,
+  UserIcon,
+  HeartPulse,
+  Smile,
+  Users,
+  GraduationCap,
+  FileText,
+  Plus,
+  Upload,
+  LogOut,
+  CalendarDays,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import type { LeavingReason, ReportType } from "@/lib/types";
+
+const TABS = ["details", "reports", "leaving"] as const;
+type Tab = (typeof TABS)[number];
+
+export default function BeneficiaryDetail() {
+  const { id } = useParams();
+  const { canEdit } = useAuth();
+  const [tab, setTab] = useState<Tab>("details");
+  const [, force] = useState(0);
+  const rerender = () => force((n) => n + 1);
+
+  const b = getBeneficiary(id ?? "");
+  if (!b) return <div className="py-24 text-center text-muted-foreground">Beneficiary not found.</div>;
+  const project = getCurrentProject();
+  const age = computeAge(b.dateOfBirth);
+  const reports = listReports(b.id);
+  const leaving = getLeaving(b.id);
+
+  const save = (patch: Record<string, unknown>) => {
+    updateBeneficiary(b.id, patch);
+    rerender();
+  };
+
+  return (
+    <div className="space-y-6">
+      <Link
+        href="/beneficiaries"
+        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-primary"
+      >
+        <ChevronLeft className="h-4 w-4" /> Back to beneficiaries
+      </Link>
+
+      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+        {/* Main */}
+        <div className="space-y-6">
+          {/* Header */}
+          <div className="overflow-hidden rounded-xl bg-primary text-primary-foreground card-shadow">
+            <div className="flex items-center gap-4 px-6 py-5">
+              <div>
+                <div className="text-xs font-medium uppercase tracking-wide text-primary-foreground/60">
+                  {b.beneficiaryNumber}
+                </div>
+                <h1 className="font-display text-2xl font-bold">{b.firstName} {b.lastName}</h1>
+                <div className="mt-1 text-sm text-primary-foreground/80">
+                  {GENDER_LABELS[b.gender]} · {age} years · {b.village}
+                </div>
+              </div>
+              <div className="ml-auto"><StatusPill status={b.status} /></div>
+            </div>
+            <div className="flex border-t border-white/10">
+              {TABS.map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setTab(t)}
+                  className={cn(
+                    "relative px-5 py-3 text-sm font-medium capitalize transition-colors",
+                    tab === t ? "text-white" : "text-primary-foreground/60 hover:text-white",
+                  )}
+                >
+                  {t === "details" ? "Details Entry" : t === "reports" ? "Progress Reports" : "Leaving"}
+                  {tab === t && <span className="absolute inset-x-3 -bottom-px h-0.5 rounded-full bg-[var(--color-brand-green)]" />}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {tab === "details" && (
+            <div className="space-y-6">
+              <SectionCard title="General Information" icon={<UserIcon className="h-4 w-4" />}>
+                <EditTextField label="First Name" value={b.firstName} onSave={(v) => save({ firstName: v })} />
+                <EditTextField label="Last Name" value={b.lastName} onSave={(v) => save({ lastName: v })} />
+                <EditTextField label="Date of Birth" type="date" value={b.dateOfBirth} onSave={(v) => save({ dateOfBirth: v })} />
+                <EditTextField label="Age (auto)" value={String(age ?? "")} display={`${age} years`} onSave={() => {}} />
+                <EditSelectField
+                  label="Gender" value={b.gender} display={GENDER_LABELS[b.gender]}
+                  options={[{ value: "male", label: "Male" }, { value: "female", label: "Female" }]}
+                  onSave={(v) => save({ gender: v })}
+                />
+                <EditTextField label="Language" value={b.language} onSave={(v) => save({ language: v })} />
+                <EditTextField label="Village" value={b.village} onSave={(v) => save({ village: v })} />
+              </SectionCard>
+
+              <SectionCard title="Health Situation" icon={<HeartPulse className="h-4 w-4" />}>
+                <EditSelectField
+                  label="Health Situation" value={b.healthSituation} display={<HealthPill value={b.healthSituation} />}
+                  options={Object.entries(HEALTH_LABELS).map(([value, label]) => ({ value, label }))}
+                  onSave={(v) => save({ healthSituation: v })}
+                />
+              </SectionCard>
+
+              <SectionCard title="Social Issues" icon={<Smile className="h-4 w-4" />}>
+                <EditTextField label="Hobbies" value={b.hobbies.join(", ")} display={b.hobbies.join(", ")} onSave={(v) => save({ hobbies: v.split(",").map((s) => s.trim()).filter(Boolean) })} />
+                <EditTextField label="Favorite Color" value={b.favoriteColor} onSave={(v) => save({ favoriteColor: v })} />
+                <EditTextField label="Character" value={b.character.join(", ")} display={b.character.join(", ")} onSave={(v) => save({ character: v.split(",").map((s) => s.trim()).filter(Boolean) })} />
+              </SectionCard>
+
+              <SectionCard title="Family Situation" icon={<Users className="h-4 w-4" />}>
+                <EditSelectField
+                  label="Parents Alive" value={b.parentsAlive} display={PARENTS_ALIVE_LABELS[b.parentsAlive]}
+                  options={Object.entries(PARENTS_ALIVE_LABELS).map(([value, label]) => ({ value, label }))}
+                  onSave={(v) => save({ parentsAlive: v })}
+                />
+                <EditSelectField
+                  label="Lives With" value={b.liveWith} display={LIVE_WITH_LABELS[b.liveWith]}
+                  options={Object.entries(LIVE_WITH_LABELS).map(([value, label]) => ({ value, label }))}
+                  onSave={(v) => save({ liveWith: v, liveWithBothParents: v === "both" })}
+                />
+                <EditTextField label="Siblings" value={b.hasSiblings ? String(b.siblingsCount ?? 0) : "0"} display={b.hasSiblings ? `Yes (${b.siblingsCount ?? 0})` : "No"} onSave={(v) => { const n = Number(v) || 0; save({ hasSiblings: n > 0, siblingsCount: n }); }} />
+                <EditSelectField
+                  label="Type of House" value={b.typeOfHouse} display={HOUSE_LABELS[b.typeOfHouse]}
+                  options={Object.entries(HOUSE_LABELS).map(([value, label]) => ({ value, label }))}
+                  onSave={(v) => save({ typeOfHouse: v })}
+                />
+              </SectionCard>
+
+              <SectionCard title="Child Education" icon={<GraduationCap className="h-4 w-4" />}>
+                <EditSelectField
+                  label="School Level" value={b.schoolLevel} display={b.schoolLevel}
+                  options={SCHOOL_LEVEL_OPTIONS.map((s) => ({ value: s, label: s }))}
+                  onSave={(v) => save({ schoolLevel: v })}
+                />
+                <EditSelectField
+                  label="School Performance" value={b.schoolPerformance} display={PERFORMANCE_LABELS[b.schoolPerformance]}
+                  options={Object.entries(PERFORMANCE_LABELS).map(([value, label]) => ({ value, label }))}
+                  onSave={(v) => save({ schoolPerformance: v })}
+                />
+                <EditSelectField
+                  label="Favorite Subject" value={b.favoriteSubject} display={b.favoriteSubject}
+                  options={FAVORITE_SUBJECT_OPTIONS.map((s) => ({ value: s, label: s }))}
+                  onSave={(v) => save({ favoriteSubject: v })}
+                />
+                <EditTextField label="Future Plans" value={b.futurePlans} onSave={(v) => save({ futurePlans: v })} />
+              </SectionCard>
+            </div>
+          )}
+
+          {tab === "reports" && (
+            <ReportsTab beneficiaryId={b.id} canEdit={canEdit} reports={reports} onChange={rerender} />
+          )}
+
+          {tab === "leaving" && (
+            <LeavingTab beneficiaryId={b.id} canEdit={canEdit} leaving={leaving} onChange={rerender} />
+          )}
+        </div>
+
+        {/* Right rail: photo */}
+        <div className="space-y-6">
+          <div className="rounded-xl border border-border bg-card p-4 card-shadow">
+            <div className="aspect-square w-full overflow-hidden rounded-lg bg-muted">
+              {b.photoUrl ? (
+                <img src={b.photoUrl} alt={b.firstName} className="h-full w-full object-cover" />
+              ) : (
+                <div className="grid h-full place-items-center text-muted-foreground">
+                  <UserIcon className="h-12 w-12" />
+                </div>
+              )}
+            </div>
+            {canEdit && <PhotoDialog onSave={(url) => save({ photoUrl: url })} />}
+          </div>
+
+          <div className="rounded-xl border border-border bg-card p-4 card-shadow">
+            <h4 className="mb-3 font-display text-sm font-semibold text-primary">Quick info</h4>
+            <dl className="space-y-2 text-sm">
+              <div className="flex justify-between"><dt className="text-muted-foreground">Project</dt><dd className="font-medium">{project?.projectName ?? "—"}</dd></div>
+              <div className="flex justify-between"><dt className="text-muted-foreground">Number</dt><dd className="font-medium">{b.beneficiaryNumber}</dd></div>
+              <div className="flex justify-between"><dt className="text-muted-foreground">Age</dt><dd className="font-medium">{age} years</dd></div>
+              <div className="flex justify-between"><dt className="text-muted-foreground">Health</dt><dd><HealthPill value={b.healthSituation} /></dd></div>
+            </dl>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PhotoDialog({ onSave }: { onSave: (url: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      onSave(await fileToDataUrl(file));
+      setOpen(false);
+      toast.success("Photo updated.");
+    } catch {
+      toast.error("Could not read that image.");
+    }
+  };
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" className="mt-3 w-full bg-card"><Upload className="mr-2 h-4 w-4" /> Update Photo</Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader><DialogTitle>Update Photo</DialogTitle></DialogHeader>
+        <label className="flex cursor-pointer flex-col items-center gap-3 rounded-xl border-2 border-dashed border-border bg-muted/40 py-10 text-muted-foreground hover:border-primary/40">
+          <Upload className="h-8 w-8" />
+          <span className="text-sm">Click to choose an image</span>
+          <input type="file" accept="image/*" className="hidden" onChange={onFile} />
+        </label>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ReportsTab({
+  beneficiaryId,
+  canEdit,
+  reports,
+  onChange,
+}: {
+  beneficiaryId: string;
+  canEdit: boolean;
+  reports: ReturnType<typeof listReports>;
+  onChange: () => void;
+}) {
+  const { user } = useAuth();
+  const [open, setOpen] = useState(false);
+  const [reportType, setReportType] = useState<ReportType>("quarterly");
+  const [period, setPeriod] = useState("Q1");
+  const [cycleYear, setCycleYear] = useState("1");
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [messageToSponsor, setMessageToSponsor] = useState("");
+  const [beneficiaryUpdate, setBeneficiaryUpdate] = useState("");
+  const [photo, setPhoto] = useState("");
+
+  // Switching the report type resets the period to the first valid option.
+  const changeType = (v: string) => {
+    const t = v as ReportType;
+    setReportType(t);
+    setPeriod(REPORT_PERIOD_OPTIONS[t][0]);
+  };
+
+  const [typeFilter, setTypeFilter] = useState<"all" | ReportType>("all");
+  const visible = typeFilter === "all" ? reports : reports.filter((r) => r.reportType === typeFilter);
+
+  const submit = () => {
+    if (!messageToSponsor.trim() && !beneficiaryUpdate.trim()) {
+      toast.error("Please write a message or an update.");
+      return;
+    }
+    const duplicate = reports.some(
+      (r) =>
+        r.reportType === reportType &&
+        r.period === period &&
+        r.cycleYear === Number(cycleYear),
+    );
+    if (duplicate) {
+      toast.error(
+        `A ${REPORT_TYPE_LABELS[reportType]} report for ${period} (Year ${cycleYear}) already exists.`,
+      );
+      return;
+    }
+    createReport({
+      beneficiaryId,
+      reportType,
+      period,
+      cycleYear: Number(cycleYear),
+      date,
+      updatePhotoUrl: photo || undefined,
+      messageToSponsor,
+      beneficiaryUpdate,
+      authorUserId: user?.id ?? "u-editor",
+    });
+    setMessageToSponsor("");
+    setBeneficiaryUpdate("");
+    setPhoto("");
+    setOpen(false);
+    onChange();
+    toast.success("Progress report added.");
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h3 className="font-display text-base font-semibold text-primary">
+          Individual Progress Reports
+        </h3>
+        {canEdit && (
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+              <Button><Plus className="mr-1.5 h-4 w-4" /> New Report</Button>
+            </DialogTrigger>
+            <DialogContent className="max-h-[85vh] overflow-y-auto">
+              <DialogHeader><DialogTitle>New Progress Report</DialogTitle></DialogHeader>
+              <div className="space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Report type</Label>
+                    <Select value={reportType} onValueChange={changeType}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(REPORT_TYPE_LABELS).map(([value, label]) => (
+                          <SelectItem key={value} value={value}>{label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Period</Label>
+                    <Select value={period} onValueChange={setPeriod}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {REPORT_PERIOD_OPTIONS[reportType].map((p) => (
+                          <SelectItem key={p} value={p}>{p}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Program year</Label>
+                    <Select value={cycleYear} onValueChange={setCycleYear}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {CYCLE_YEAR_OPTIONS.map((y) => (
+                          <SelectItem key={y} value={String(y)}>Year {y}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Report date</Label>
+                    <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Update photo</Label>
+                  <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-primary hover:bg-muted/40">
+                    <Upload className="h-4 w-4" /> {photo ? "Photo selected" : "Choose photo"}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const f = e.target.files?.[0];
+                        if (!f) return;
+                        try {
+                          setPhoto(await fileToDataUrl(f));
+                        } catch {
+                          toast.error("Could not read that image.");
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+                <div className="space-y-2">
+                  <Label>Message to the sponsor</Label>
+                  <Textarea rows={3} value={messageToSponsor} onChange={(e) => setMessageToSponsor(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Beneficiary update</Label>
+                  <Textarea rows={3} value={beneficiaryUpdate} onChange={(e) => setBeneficiaryUpdate(e.target.value)} />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button onClick={submit}>Save Report</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
+      </div>
+
+      {/* Type filter */}
+      <div className="flex flex-wrap items-center gap-1 rounded-lg border border-border bg-card p-1">
+        {(["all", "quarterly", "semi_annual", "annual"] as const).map((t) => {
+          const count =
+            t === "all" ? reports.length : reports.filter((r) => r.reportType === t).length;
+          return (
+            <button
+              key={t}
+              onClick={() => setTypeFilter(t)}
+              className={cn(
+                "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                typeFilter === t
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-primary",
+              )}
+            >
+              {t === "all" ? "All" : REPORT_TYPE_LABELS[t]}
+              <span className="ml-1.5 opacity-60">{count}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {visible.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border bg-card py-14 text-center text-muted-foreground">
+          <FileText className="mx-auto mb-2 h-8 w-8" />
+          No progress reports yet.
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {visible.map((r) => (
+            <div key={r.id} className="rounded-xl border border-border bg-card p-5 card-shadow">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-[var(--color-brand-green)]/12 px-2.5 py-0.5 text-xs font-semibold text-[var(--color-brand-green)]">
+                    {REPORT_TYPE_LABELS[r.reportType]}
+                  </span>
+                  <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
+                    {r.period}
+                  </span>
+                  <span className="text-xs text-muted-foreground">Year {r.cycleYear}</span>
+                </div>
+                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <CalendarDays className="h-3.5 w-3.5" /> {r.date}
+                </span>
+              </div>
+              <div className="mt-4 grid gap-4 sm:grid-cols-[auto_1fr]">
+                {r.updatePhotoUrl && (
+                  <img src={r.updatePhotoUrl} alt="Update" className="h-24 w-24 rounded-lg object-cover" />
+                )}
+                <div className="space-y-3">
+                  <div>
+                    <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Message to sponsor</div>
+                    <p className="mt-0.5 text-sm">{r.messageToSponsor || "—"}</p>
+                  </div>
+                  <div>
+                    <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Beneficiary update</div>
+                    <p className="mt-0.5 text-sm">{r.beneficiaryUpdate || "—"}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LeavingTab({
+  beneficiaryId,
+  canEdit,
+  leaving,
+  onChange,
+}: {
+  beneficiaryId: string;
+  canEdit: boolean;
+  leaving: ReturnType<typeof getLeaving>;
+  onChange: () => void;
+}) {
+  const { user } = useAuth();
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState<LeavingReason>("change_of_residence");
+  const [explanation, setExplanation] = useState("");
+
+  const submit = () => {
+    startLeaving({
+      beneficiaryId,
+      reason,
+      explanation,
+      date: new Date().toISOString().slice(0, 10),
+      authorUserId: user?.id ?? "u-editor",
+    });
+    setOpen(false);
+    onChange();
+    toast.success("Leaving record started.");
+  };
+
+  if (leaving) {
+    return (
+      <SectionCard title="Leaving Record" icon={<LogOut className="h-4 w-4" />}>
+        <div className="space-y-3 text-sm">
+          <div className="flex justify-between border-b border-border/70 pb-3">
+            <span className="text-muted-foreground">Reason</span>
+            <span className="font-medium">{LEAVING_REASON_LABELS[leaving.reason]}</span>
+          </div>
+          <div className="flex justify-between border-b border-border/70 pb-3">
+            <span className="text-muted-foreground">Date</span>
+            <span className="font-medium">{leaving.date}</span>
+          </div>
+          <div>
+            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Explanation</div>
+            <p className="mt-1">{leaving.explanation || "—"}</p>
+          </div>
+        </div>
+      </SectionCard>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-dashed border-border bg-card py-14 text-center">
+      <LogOut className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+      <p className="mb-4 text-sm text-muted-foreground">
+        This beneficiary is still active in the program.
+      </p>
+      {canEdit && (
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogTrigger asChild>
+            <Button variant="destructive"><LogOut className="mr-1.5 h-4 w-4" /> Start Leaving</Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader><DialogTitle>Start Leaving</DialogTitle></DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Why is the beneficiary leaving?</Label>
+                <Select value={reason} onValueChange={(v) => setReason(v as LeavingReason)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(LEAVING_REASON_LABELS).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Explanation (optional)</Label>
+                <Textarea rows={3} value={explanation} onChange={(e) => setExplanation(e.target.value)} />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="destructive" onClick={submit}>Confirm Leaving</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+    </div>
+  );
+}
