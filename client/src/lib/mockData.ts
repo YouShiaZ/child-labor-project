@@ -1,40 +1,36 @@
-// Child Labor Project — mock data store (replace with backend per STRUCTURE.md)
+// Child Labor Project — seed data (replaced by Supabase in Phase 2).
 import type {
   User,
+  Office,
   Project,
   Beneficiary,
   ProgressReport,
+  OfficeReport,
   LeavingRecord,
 } from "./types";
 
-export const users: User[] = [
+// The program runs across TWO offices.
+export const OFFICE_CAIRO = "office-cairo";
+export const OFFICE_MINYA = "office-minya";
+
+export const offices: Office[] = [
   {
-    id: "u-admin",
-    fullName: "System Administrator",
-    email: "admin@clp.org",
-    role: "admin",
-    active: true,
+    id: OFFICE_CAIRO,
+    name: "Cairo Office",
+    city: "Cairo",
+    governorate: "Cairo",
     createdAt: "2024-01-10",
   },
   {
-    id: "u-editor",
-    fullName: "Mariam Adel",
-    email: "editor@clp.org",
-    role: "editor",
-    active: true,
-    createdAt: "2024-02-01",
-  },
-  {
-    id: "u-viewer",
-    fullName: "John Director",
-    email: "viewer@clp.org",
-    role: "viewer",
-    active: true,
-    createdAt: "2024-02-05",
+    id: OFFICE_MINYA,
+    name: "Minya Office",
+    city: "Minya",
+    governorate: "Minya",
+    createdAt: "2024-01-10",
   },
 ];
 
-// The system runs a SINGLE project: Child Labor Project.
+// The single program (kept for reporting / API contract).
 export const PROJECT_ID = "p-1";
 
 export const projects: Project[] = [
@@ -49,18 +45,105 @@ export const projects: Project[] = [
   },
 ];
 
+// Accounts: 1 super admin, 2 office admins, 4 editors (2 per office), 1 viewer.
+export const users: User[] = [
+  {
+    id: "u-super",
+    fullName: "Program Director",
+    email: "super@clp.org",
+    role: "super_admin",
+    officeId: null,
+    active: true,
+    createdAt: "2024-01-10",
+  },
+  {
+    id: "u-admin-cairo",
+    fullName: "Cairo Office Manager",
+    email: "admin.cairo@clp.org",
+    role: "office_admin",
+    officeId: OFFICE_CAIRO,
+    active: true,
+    createdAt: "2024-01-12",
+  },
+  {
+    id: "u-admin-minya",
+    fullName: "Minya Office Manager",
+    email: "admin.minya@clp.org",
+    role: "office_admin",
+    officeId: OFFICE_MINYA,
+    active: true,
+    createdAt: "2024-01-12",
+  },
+  {
+    id: "u-ed-cairo-1",
+    fullName: "Mariam Adel",
+    email: "editor1.cairo@clp.org",
+    role: "editor",
+    officeId: OFFICE_CAIRO,
+    active: true,
+    createdAt: "2024-02-01",
+  },
+  {
+    id: "u-ed-cairo-2",
+    fullName: "Peter Nabil",
+    email: "editor2.cairo@clp.org",
+    role: "editor",
+    officeId: OFFICE_CAIRO,
+    active: true,
+    createdAt: "2024-02-01",
+  },
+  {
+    id: "u-ed-minya-1",
+    fullName: "Verena Sami",
+    email: "editor1.minya@clp.org",
+    role: "editor",
+    officeId: OFFICE_MINYA,
+    active: true,
+    createdAt: "2024-02-01",
+  },
+  {
+    id: "u-ed-minya-2",
+    fullName: "Beshoy Rafik",
+    email: "editor2.minya@clp.org",
+    role: "editor",
+    officeId: OFFICE_MINYA,
+    active: true,
+    createdAt: "2024-02-01",
+  },
+  {
+    id: "u-viewer",
+    fullName: "Sponsor Viewer",
+    email: "viewer@clp.org",
+    role: "viewer",
+    officeId: null,
+    active: true,
+    createdAt: "2024-02-05",
+  },
+];
+
+const baseChild = {
+  projectId: PROJECT_ID,
+  approvalStatus: "approved" as const,
+  language: "Arabic",
+  additionalAid: "",
+  scholarshipReason: "",
+  scholarshipImpact: "",
+};
+
 export const beneficiaries: Beneficiary[] = [
   {
+    ...baseChild,
     id: "b-1",
-    projectId: "p-1",
+    officeId: OFFICE_CAIRO,
     beneficiaryNumber: "CLP-0001",
     status: "sponsored",
+    approvedByUserId: "u-admin-cairo",
+    approvedAt: "2024-02-11",
     firstName: "Mina",
     lastName: "Adel",
     dateOfBirth: "2014-06-12",
     gender: "male",
     photoUrl: "https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?w=400&h=400&fit=crop",
-    language: "Arabic",
     village: "Manshiet Nasser",
     healthSituation: "good",
     hobbies: ["Football", "Drawing"],
@@ -72,23 +155,35 @@ export const beneficiaries: Beneficiary[] = [
     hasSiblings: true,
     siblingsCount: 3,
     typeOfHouse: "mud_brick",
-    schoolLevel: "Grade 5",
+    guardianName: "Adel (Father), Mariam (Mother)",
+    relationToChild: "Biological Parents",
+    schoolName: "Gabal El-Mokattam School",
+    schoolLevel: "Primary 5",
     schoolPerformance: "good",
     favoriteSubject: "Mathematics",
     futurePlans: "Wants to become an engineer.",
+    tuitionFees: 13000,
+    amountSponsored: 10000,
+    additionalAid: "Medical support when needed",
+    scholarshipReason:
+      "Mina comes from a vulnerable household in Manshiet Nasser where both parents work in informal garbage collection with unstable income. Without support he is at real risk of dropping out to work.",
+    scholarshipImpact:
+      "The scholarship keeps Mina in school, reduces the risk of child labor, and secures his academic progression at a critical stage.",
     createdAt: "2024-02-10",
   },
   {
+    ...baseChild,
     id: "b-2",
-    projectId: "p-1",
+    officeId: OFFICE_CAIRO,
     beneficiaryNumber: "CLP-0002",
     status: "entry",
+    approvalStatus: "pending",
+    submittedByUserId: "u-ed-cairo-1",
     firstName: "Kyrillos",
     lastName: "Ashraf",
     dateOfBirth: "2016-09-03",
     gender: "female",
     photoUrl: "https://images.unsplash.com/photo-1595152772835-219674b2a8a6?w=400&h=400&fit=crop",
-    language: "Arabic",
     village: "Ezbet El Nakhl",
     healthSituation: "average",
     hobbies: ["Reading", "Singing"],
@@ -100,24 +195,36 @@ export const beneficiaries: Beneficiary[] = [
     hasSiblings: true,
     siblingsCount: 2,
     typeOfHouse: "reinforced_concrete",
-    schoolLevel: "Grade 3",
+    guardianName: "Ashraf (Father)",
+    relationToChild: "Biological Father",
+    schoolName: "St. Mark Primary School",
+    schoolLevel: "Primary 3",
     schoolPerformance: "average",
     favoriteSubject: "Art",
     futurePlans: "Wants to become a teacher.",
+    tuitionFees: 9000,
+    amountSponsored: 7000,
+    additionalAid: "School uniform and books",
+    scholarshipReason:
+      "Kyrillos lives with her father only after her mother passed away. The family income is irregular and cannot cover full tuition.",
+    scholarshipImpact:
+      "Support ensures she stays enrolled and receives the learning materials she needs.",
     createdAt: "2024-04-01",
   },
   {
+    ...baseChild,
     id: "b-3",
-    projectId: "p-1",
+    officeId: OFFICE_MINYA,
     beneficiaryNumber: "CLP-0003",
     status: "priority",
+    approvedByUserId: "u-admin-minya",
+    approvedAt: "2024-03-13",
     firstName: "Amgad",
     lastName: "Ramzy",
     dateOfBirth: "2013-01-22",
     gender: "male",
     photoUrl: "https://images.unsplash.com/photo-1490730141103-6cac27aaab94?w=400&h=400&fit=crop",
-    language: "Arabic",
-    village: "Manshiet Nasser",
+    village: "Abu Qurqas",
     healthSituation: "poor",
     hobbies: ["Cycling", "Swimming"],
     favoriteColor: "Green",
@@ -127,24 +234,36 @@ export const beneficiaries: Beneficiary[] = [
     liveWith: "mother",
     hasSiblings: false,
     typeOfHouse: "mud_brick",
-    schoolLevel: "Grade 6",
+    guardianName: "Ramzy (Mother)",
+    relationToChild: "Biological Mother",
+    schoolName: "Abu Qurqas Primary School",
+    schoolLevel: "Primary 6",
     schoolPerformance: "weak",
     favoriteSubject: "Science",
     futurePlans: "Wants to become a doctor.",
+    tuitionFees: 8000,
+    amountSponsored: 6500,
+    additionalAid: "Medical support, transportation",
+    scholarshipReason:
+      "Amgad's mother is the sole provider. He was working part-time in a workshop before joining the program.",
+    scholarshipImpact:
+      "The scholarship replaces lost income, letting him return to school full-time.",
     createdAt: "2024-03-12",
   },
   {
+    ...baseChild,
     id: "b-4",
-    projectId: "p-1",
+    officeId: OFFICE_MINYA,
     beneficiaryNumber: "CLP-0004",
     status: "sponsored",
-    firstName: "Mahab",
+    approvedByUserId: "u-admin-minya",
+    approvedAt: "2024-04-16",
+    firstName: "Mariam",
     lastName: "Kamel",
     dateOfBirth: "2015-11-30",
     gender: "female",
     photoUrl: "https://images.unsplash.com/photo-1542103749-8ef59b94f47e?w=400&h=400&fit=crop",
-    language: "Arabic",
-    village: "Ezbet El Nakhl",
+    village: "Mallawi",
     healthSituation: "good",
     hobbies: ["Dancing", "Reading"],
     favoriteColor: "Yellow",
@@ -155,10 +274,20 @@ export const beneficiaries: Beneficiary[] = [
     hasSiblings: true,
     siblingsCount: 4,
     typeOfHouse: "mud_brick",
-    schoolLevel: "Grade 4",
+    guardianName: "Kamel (Father), Nadia (Mother)",
+    relationToChild: "Biological Parents",
+    schoolName: "Mallawi Language School",
+    schoolLevel: "Primary 4",
     schoolPerformance: "excellent",
     favoriteSubject: "English",
-    futurePlans: "Wants to become a pilot.",
+    futurePlans: "Wants to become a pharmacist.",
+    tuitionFees: 11000,
+    amountSponsored: 8500,
+    additionalAid: "Home renovation support",
+    scholarshipReason:
+      "Large family with five children and a single seasonal income. Tuition is beyond the family's means.",
+    scholarshipImpact:
+      "Keeps Mariam, a top performer, on track and eases pressure on the whole household.",
     createdAt: "2024-04-15",
   },
 ];
@@ -174,8 +303,8 @@ export const progressReports: ProgressReport[] = [
     messageToSponsor:
       "Dear sponsor, thank you for your support. Mina has settled into the program and is attending school regularly.",
     beneficiaryUpdate:
-      "Mina enrolled back into Grade 5 and stopped working at the workshop. Attendance is 92% this quarter.",
-    authorUserId: "u-editor",
+      "Mina enrolled back into Primary 5 and stopped working at the workshop. Attendance is 92% this quarter.",
+    authorUserId: "u-ed-cairo-1",
   },
   {
     id: "r-2",
@@ -190,34 +319,23 @@ export const progressReports: ProgressReport[] = [
       "Mina sends his warm greetings and a drawing he made in art class. He is very grateful for your support.",
     beneficiaryUpdate:
       "Health check completed — result: good. Grades improved from average to good. Joined the school football team.",
-    authorUserId: "u-editor",
+    authorUserId: "u-ed-cairo-1",
   },
   {
     id: "r-3",
-    beneficiaryId: "b-1",
-    reportType: "annual",
-    period: "Full Year",
-    cycleYear: 1,
-    date: "2024-12-20",
-    messageToSponsor:
-      "Year one is complete. Thank you for standing by Mina throughout this year.",
-    beneficiaryUpdate:
-      "Mina passed Grade 5 and has not returned to labor. The family received a monthly education grant and psychosocial follow-up.",
-    authorUserId: "u-editor",
-  },
-  {
-    id: "r-4",
     beneficiaryId: "b-4",
     reportType: "quarterly",
     period: "Q4",
     cycleYear: 1,
     date: "2024-12-05",
     messageToSponsor:
-      "Mahab is grateful for the school supplies and sends her warm greetings to her sponsor.",
+      "Mariam is grateful for the school supplies and sends her warm greetings to her sponsor.",
     beneficiaryUpdate:
-      "Mahab scored top marks in English and enjoys the reading club after school.",
-    authorUserId: "u-editor",
+      "Mariam scored top marks in English and enjoys the reading club after school.",
+    authorUserId: "u-ed-minya-1",
   },
 ];
+
+export const officeReports: OfficeReport[] = [];
 
 export const leavingRecords: LeavingRecord[] = [];

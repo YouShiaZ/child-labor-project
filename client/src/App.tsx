@@ -8,14 +8,16 @@ import { AuthProvider } from "./contexts/AuthContext";
 import RequireAuth from "./components/RequireAuth";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
-import ProjectDetail from "./pages/ProjectDetail";
+import Offices from "./pages/Offices";
+import OfficeDetail from "./pages/OfficeDetail";
 import Beneficiaries from "./pages/Beneficiaries";
 import NewBeneficiary from "./pages/NewBeneficiary";
 import BeneficiaryDetail from "./pages/BeneficiaryDetail";
+import Analytics from "./pages/Analytics";
 import Users from "./pages/Users";
 
-// This system manages a SINGLE project (Child Labor Project).
-// Legacy /projects* URLs redirect to the single project record.
+const EDITORS = ["super_admin", "office_admin", "editor"] as const;
+
 function Router() {
   return (
     <Switch>
@@ -26,17 +28,15 @@ function Router() {
         <RequireAuth><Dashboard /></RequireAuth>
       </Route>
 
-      <Route path="/project/new-beneficiary">
-        <RequireAuth roles={["admin", "editor"]}><NewBeneficiary /></RequireAuth>
+      <Route path="/offices">
+        <RequireAuth><Offices /></RequireAuth>
       </Route>
-      <Route path="/project">
-        <RequireAuth><ProjectDetail /></RequireAuth>
+      <Route path="/offices/:officeId/new-beneficiary">
+        <RequireAuth roles={[...EDITORS]}><NewBeneficiary /></RequireAuth>
       </Route>
-
-      {/* Legacy redirects */}
-      <Route path="/projects" component={() => <Redirect to="/project" />} />
-      <Route path="/projects/:id/new-beneficiary" component={() => <Redirect to="/project/new-beneficiary" />} />
-      <Route path="/projects/:id" component={() => <Redirect to="/project" />} />
+      <Route path="/offices/:officeId">
+        <RequireAuth><OfficeDetail /></RequireAuth>
+      </Route>
 
       <Route path="/beneficiaries">
         <RequireAuth><Beneficiaries /></RequireAuth>
@@ -45,9 +45,19 @@ function Router() {
         <RequireAuth><BeneficiaryDetail /></RequireAuth>
       </Route>
 
-      <Route path="/users">
-        <RequireAuth roles={["admin"]}><Users /></RequireAuth>
+      <Route path="/analytics">
+        <RequireAuth><Analytics /></RequireAuth>
       </Route>
+
+      <Route path="/users">
+        <RequireAuth roles={["super_admin"]}><Users /></RequireAuth>
+      </Route>
+
+      {/* Legacy redirects */}
+      <Route path="/project" component={() => <Redirect to="/offices" />} />
+      <Route path="/project/new-beneficiary" component={() => <Redirect to="/offices" />} />
+      <Route path="/projects" component={() => <Redirect to="/offices" />} />
+      <Route path="/projects/:id" component={() => <Redirect to="/offices" />} />
 
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />

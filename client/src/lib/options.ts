@@ -43,20 +43,17 @@ export const LANGUAGE_OPTIONS = [
   "Arabic",
   "English",
   "French",
-  "Swahili",
-  "Amharic",
-  "Hausa",
   "Other",
 ];
 
 export const SCHOOL_LEVEL_OPTIONS = [
   "Kindergarten",
-  "Grade 1",
-  "Grade 2",
-  "Grade 3",
-  "Grade 4",
-  "Grade 5",
-  "Grade 6",
+  "Primary 1",
+  "Primary 2",
+  "Primary 3",
+  "Primary 4",
+  "Primary 5",
+  "Primary 6",
   "Preparatory 1",
   "Preparatory 2",
   "Preparatory 3",
@@ -130,9 +127,34 @@ export const LEAVING_REASON_LABELS: Record<string, string> = {
 };
 
 export const ROLE_LABELS: Record<string, string> = {
-  admin: "Admin",
+  super_admin: "Super Admin",
+  office_admin: "Office Admin",
   editor: "Editor",
   viewer: "Viewer",
+};
+
+export const ROLE_DESCRIPTIONS: Record<string, string> = {
+  super_admin: "Oversees both offices, manages all accounts, full access.",
+  office_admin: "Full rights within their office; approves submitted forms.",
+  editor: "Enters and edits records in their office (pending approval).",
+  viewer: "Read-only access to everything; can view analytics and downloads.",
+};
+
+export const APPROVAL_LABELS: Record<string, string> = {
+  pending: "Pending approval",
+  approved: "Approved",
+};
+
+// --- Seasonal thank-you card ---
+export const SEASON_LABELS: Record<string, string> = {
+  christmas: "Christmas Card",
+  easter: "Easter Card",
+};
+
+// --- Annual office report ---
+export const OFFICE_REPORT_TYPE_LABELS: Record<string, string> = {
+  word: "Word",
+  pdf: "PDF",
 };
 
 // --- Progress report periodicity ---

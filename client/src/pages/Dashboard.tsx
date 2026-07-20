@@ -1,22 +1,11 @@
-// Child Labor Project — Dashboard: summary stats + recent beneficiaries.
+// Child Labor Project — global dashboard across both offices.
 import { Link } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
-import { listBeneficiaries, listAllReports, getCurrentProject, computeAge } from "@/lib/api";
-import { StatusPill } from "@/components/ui-bits";
-import { GENDER_LABELS } from "@/lib/options";
-import { Users2, FileText, HeartHandshake, LogOut as LeaveIcon, MapPin } from "lucide-react";
+import { listBeneficiaries, listOffices, listAllReports, computeAge } from "@/lib/api";
+import { StatusPill, ApprovalPill, OfficePill } from "@/components/ui-bits";
+import { Users2, Building2, HeartHandshake, Clock, ArrowRight } from "lucide-react";
 
-function Stat({
-  icon,
-  label,
-  value,
-  tint,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: number;
-  tint: string;
-}) {
+function Stat({ icon, label, value, tint }: { icon: React.ReactNode; label: string; value: number; tint: string }) {
   return (
     <div className="flex items-center gap-4 rounded-xl border border-border bg-card px-5 py-4 card-shadow">
       <span className={`grid h-12 w-12 place-items-center rounded-lg ${tint}`}>{icon}</span>
@@ -30,12 +19,13 @@ function Stat({
 
 export default function Dashboard() {
   const { user } = useAuth();
+  const offices = listOffices();
   const beneficiaries = listBeneficiaries();
-  const project = getCurrentProject();
   const reports = listAllReports();
   const sponsored = beneficiaries.filter((b) => b.status === "sponsored").length;
-  const leaving = beneficiaries.filter((b) => b.status === "leaving").length;
-  const recent = [...beneficiaries].slice(-5).reverse();
+  const pending = beneficiaries.filter((b) => b.approvalStatus === "pending").length;
+  const officeName = (id: string) => offices.find((o) => o.id === id)?.name ?? "—";
+  const recent = [...beneficiaries].slice(-6).reverse();
 
   return (
     <div className="space-y-7">
@@ -43,43 +33,51 @@ export default function Dashboard() {
         <h1 className="font-display text-2xl font-bold text-primary">
           Welcome back, {user?.fullName.split(" ")[0]}
         </h1>
-        <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
-          <Link href="/project" className="font-medium text-primary hover:underline">
-            {project?.projectName}
-          </Link>
-          <span className="inline-flex items-center gap-1">
-            <MapPin className="h-3.5 w-3.5" /> {project?.countryName}
-          </span>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Child Labor Project — program overview across Cairo and Minya offices.
         </p>
       </div>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Stat
-          icon={<Users2 className="h-6 w-6 text-[var(--color-brand-green)]" />}
-          label="Beneficiaries"
-          value={beneficiaries.length}
-          tint="bg-emerald-50"
-        />
-        <Stat
-          icon={<HeartHandshake className="h-6 w-6 text-emerald-600" />}
-          label="Sponsored"
-          value={sponsored}
-          tint="bg-emerald-50"
-        />
-        <Stat
-          icon={<FileText className="h-6 w-6 text-primary" />}
-          label="Progress Reports"
-          value={reports.length}
-          tint="bg-primary/10"
-        />
-        <Stat
-          icon={<LeaveIcon className="h-6 w-6 text-rose-600" />}
-          label="Leaving"
-          value={leaving}
-          tint="bg-rose-50"
-        />
+        <Stat icon={<Building2 className="h-6 w-6 text-primary" />} label="Offices" value={offices.length} tint="bg-primary/10" />
+        <Stat icon={<Users2 className="h-6 w-6 text-[var(--color-brand-green)]" />} label="Beneficiaries" value={beneficiaries.length} tint="bg-emerald-50" />
+        <Stat icon={<HeartHandshake className="h-6 w-6 text-emerald-600" />} label="Sponsored" value={sponsored} tint="bg-emerald-50" />
+        <Stat icon={<Clock className="h-6 w-6 text-amber-600" />} label="Pending approval" value={pending} tint="bg-amber-50" />
       </div>
 
+      {/* Office cards */}
+      <div className="grid gap-4 md:grid-cols-2">
+        {offices.map((o) => {
+          const rows = listBeneficiaries(o.id);
+          const p = rows.filter((b) => b.approvalStatus === "pending").length;
+          const mine = user?.officeId === o.id;
+          return (
+            <Link
+              key={o.id}
+              href={`/offices/${o.id}`}
+              className="group flex items-center justify-between rounded-xl border border-border bg-card p-5 card-shadow transition-shadow hover:card-shadow-lg"
+            >
+              <div className="flex items-center gap-3">
+                <span className="grid h-11 w-11 place-items-center rounded-lg bg-primary/10">
+                  <Building2 className="h-5 w-5 text-primary" />
+                </span>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-display font-semibold text-primary">{o.name}</span>
+                    {mine && <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">Your office</span>}
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    {rows.length} beneficiaries{p ? ` · ${p} pending` : ""}
+                  </div>
+                </div>
+              </div>
+              <ArrowRight className="h-5 w-5 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
+            </Link>
+          );
+        })}
+      </div>
+
+      {/* Recent */}
       <div className="rounded-xl border border-border bg-card card-shadow">
         <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
           <h2 className="font-display text-sm font-semibold text-primary">Recent beneficiaries</h2>
@@ -93,9 +91,10 @@ export default function Dashboard() {
               <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <th className="px-5 py-3 font-medium">Name</th>
                 <th className="px-5 py-3 font-medium">Number</th>
-                <th className="px-5 py-3 font-medium">Gender</th>
+                <th className="px-5 py-3 font-medium">Office</th>
                 <th className="px-5 py-3 font-medium">Age</th>
                 <th className="px-5 py-3 font-medium">Status</th>
+                <th className="px-5 py-3 font-medium">Approval</th>
               </tr>
             </thead>
             <tbody>
@@ -107,9 +106,10 @@ export default function Dashboard() {
                     </Link>
                   </td>
                   <td className="px-5 py-3 text-muted-foreground">{b.beneficiaryNumber}</td>
-                  <td className="px-5 py-3">{GENDER_LABELS[b.gender]}</td>
+                  <td className="px-5 py-3"><OfficePill name={officeName(b.officeId)} /></td>
                   <td className="px-5 py-3">{computeAge(b.dateOfBirth)}</td>
                   <td className="px-5 py-3"><StatusPill status={b.status} /></td>
+                  <td className="px-5 py-3"><ApprovalPill status={b.approvalStatus} /></td>
                 </tr>
               ))}
             </tbody>

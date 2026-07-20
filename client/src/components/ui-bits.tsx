@@ -1,5 +1,4 @@
 // Child Labor Project — small shared presentational helpers.
-// Style: navy/green enterprise records. Status pills + label/value field rows.
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
 import { STATUS_LABELS, HEALTH_LABELS } from "@/lib/options";
@@ -37,6 +36,30 @@ export function HealthPill({ value }: { value: string }) {
       )}
     >
       {HEALTH_LABELS[value] ?? value}
+    </span>
+  );
+}
+
+export function ApprovalPill({ status }: { status: string }) {
+  const approved = status === "approved";
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset",
+        approved
+          ? "bg-emerald-50 text-emerald-700 ring-emerald-600/20"
+          : "bg-amber-50 text-amber-700 ring-amber-600/20",
+      )}
+    >
+      {approved ? "Approved" : "Pending approval"}
+    </span>
+  );
+}
+
+export function OfficePill({ name }: { name: string }) {
+  return (
+    <span className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
+      {name}
     </span>
   );
 }

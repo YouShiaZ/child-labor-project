@@ -1,16 +1,42 @@
-// Child Labor Project — shared TypeScript types (mirrors STRUCTURE.md)
+// Child Labor Project — shared domain types.
+// The system runs ONE program across TWO offices (Cairo + Minya).
+// Data is office-scoped: users can only edit records in their own office.
 
-export type Role = "admin" | "editor" | "viewer";
+// -----------------------------------------------------------------------------
+// Offices
+// -----------------------------------------------------------------------------
+export type OfficeId = string;
+
+export interface Office {
+  id: OfficeId;
+  name: string; // "Cairo Office"
+  city: string; // "Cairo"
+  governorate: string; // "Cairo" | "Minya"
+  createdAt: string;
+}
+
+// -----------------------------------------------------------------------------
+// Users & roles
+// -----------------------------------------------------------------------------
+// super_admin  — oversees BOTH offices, manages all accounts, edits everything.
+// office_admin — bound to ONE office: full rights inside it + approves forms.
+// editor       — bound to ONE office: creates/edits records (need approval).
+// viewer       — read-only across everything; can view analytics + download files.
+export type Role = "super_admin" | "office_admin" | "editor" | "viewer";
 
 export interface User {
   id: string;
   fullName: string;
   email: string;
   role: Role;
+  officeId: OfficeId | null; // null for super_admin & viewer (not office-bound)
   active: boolean;
   createdAt: string;
 }
 
+// -----------------------------------------------------------------------------
+// Project (single program — kept for the API contract / reporting)
+// -----------------------------------------------------------------------------
 export interface Project {
   id: string;
   projectName: string;
@@ -21,6 +47,9 @@ export interface Project {
   createdAt: string;
 }
 
+// -----------------------------------------------------------------------------
+// Beneficiary (the child)
+// -----------------------------------------------------------------------------
 export type BeneficiaryStatus = "entry" | "priority" | "sponsored" | "leaving";
 export type Gender = "male" | "female";
 export type HealthSituation = "good" | "average" | "poor";
@@ -29,46 +58,79 @@ export type LiveWith = "both" | "father" | "mother" | "others";
 export type HouseType = "mud_brick" | "reinforced_concrete";
 export type SchoolPerformance = "excellent" | "good" | "average" | "weak";
 
+// Records entered by editors are pending until an admin approves them.
+export type ApprovalStatus = "pending" | "approved";
+
 export interface Beneficiary {
   id: string;
   projectId: string;
+  officeId: OfficeId; // which office owns / can edit this record
   beneficiaryNumber: string;
   status: BeneficiaryStatus;
 
-  // General
+  // Approval workflow
+  approvalStatus: ApprovalStatus;
+  submittedByUserId?: string;
+  approvedByUserId?: string;
+  approvedAt?: string;
+
+  // --- General ---
   firstName: string;
   lastName: string;
-  dateOfBirth: string; // ISO date; age computed on client
+  dateOfBirth: string; // ISO date; age computed on the client
   gender: Gender;
   photoUrl?: string;
   language: string;
-  village: string;
+  village: string; // aka Community
 
-  // Health
+  // --- Health ---
   healthSituation: HealthSituation;
 
-  // Social
+  // --- Social ---
   hobbies: string[];
   favoriteColor: string;
   character: string[];
 
-  // Family
+  // --- Family ---
   parentsAlive: ParentsAlive;
   liveWithBothParents: boolean;
   liveWith: LiveWith;
   hasSiblings: boolean;
   siblingsCount?: number;
   typeOfHouse: HouseType;
+  guardianName: string; // e.g. "Mourice (Father), Martha (Mother)"
+  relationToChild: string; // e.g. "Biological Parents"
 
-  // Education
-  schoolLevel: string;
+  // --- Education ---
+  schoolName: string; // e.g. "Gabal El-Mokattam School"
+  schoolLevel: string; // grade, e.g. "Primary 1"
   schoolPerformance: SchoolPerformance;
   favoriteSubject: string;
   futurePlans: string;
 
+  // --- Scholarship / sponsorship ---
+  tuitionFees?: number; // annual, EGP
+  amountSponsored?: number; // by the project, EGP
+  additionalAid: string; // e.g. "Medical support when needed"
+  scholarshipReason: string; // long text
+  scholarshipImpact: string; // long text — how the scholarship helps
+
+  // --- Seasonal thank-you card (Christmas / Easter) ---
+  seasonalCardUrl?: string; // uploaded drawing/card image
+  seasonalCardSeason?: SeasonKind; // which season it was uploaded for
+  seasonalCardUpdatedAt?: string;
+
   createdAt: string;
 }
 
+// -----------------------------------------------------------------------------
+// Seasonal card
+// -----------------------------------------------------------------------------
+export type SeasonKind = "christmas" | "easter";
+
+// -----------------------------------------------------------------------------
+// Individual progress report
+// -----------------------------------------------------------------------------
 export type ReportType = "quarterly" | "semi_annual" | "annual";
 
 export interface ProgressReport {
@@ -84,6 +146,26 @@ export interface ProgressReport {
   authorUserId: string;
 }
 
+// -----------------------------------------------------------------------------
+// Annual office report (a Word/PDF document uploaded per office, per year)
+// -----------------------------------------------------------------------------
+export type OfficeReportFileType = "word" | "pdf";
+
+export interface OfficeReport {
+  id: string;
+  officeId: OfficeId;
+  year: number;
+  title: string;
+  fileName: string;
+  fileType: OfficeReportFileType;
+  fileUrl: string; // data URL now; object-storage URL after Phase 2
+  uploadedByUserId: string;
+  uploadedAt: string;
+}
+
+// -----------------------------------------------------------------------------
+// Leaving record
+// -----------------------------------------------------------------------------
 export type LeavingReason =
   | "change_of_residence"
   | "death"

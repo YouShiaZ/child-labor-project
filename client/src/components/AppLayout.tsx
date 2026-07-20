@@ -1,15 +1,16 @@
 // Child Labor Project — app shell: navy navbar + primary nav + user menu.
-// Style: navy chrome (#1B3A6B), green active accent, light canvas content.
 import { Link, useLocation } from "wouter";
 import { type ReactNode } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { ROLE_LABELS } from "@/lib/options";
+import { getOffice } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
-  FolderKanban,
+  Building2,
   Users2,
   Users,
+  BarChart3,
   LogOut,
 } from "lucide-react";
 import {
@@ -26,16 +27,19 @@ const ICON_URL = "/favicon.png";
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/project", label: "Project", icon: FolderKanban },
+  { href: "/offices", label: "Offices", icon: Building2 },
   { href: "/beneficiaries", label: "Beneficiaries", icon: Users2 },
+  { href: "/analytics", label: "Analytics", icon: BarChart3 },
 ];
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const [location, navigate] = useLocation();
-  const { user, logout, isRole } = useAuth();
+  const { user, logout, canManageUsers } = useAuth();
 
   const nav = [...NAV];
-  if (isRole("admin")) nav.push({ href: "/users", label: "Users", icon: Users });
+  if (canManageUsers) nav.push({ href: "/users", label: "Users", icon: Users });
+
+  const office = user?.officeId ? getOffice(user.officeId) : null;
 
   const initials = user
     ? user.fullName
@@ -97,6 +101,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                     <span className="text-sm font-medium">{user.fullName}</span>
                     <span className="text-[11px] text-primary-foreground/70">
                       {ROLE_LABELS[user.role]}
+                      {office ? ` · ${office.name}` : ""}
                     </span>
                   </span>
                 </DropdownMenuTrigger>
@@ -106,6 +111,10 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                       <span>{user.fullName}</span>
                       <span className="text-xs font-normal text-muted-foreground">
                         {user.email}
+                      </span>
+                      <span className="mt-1 text-xs font-medium text-primary">
+                        {ROLE_LABELS[user.role]}
+                        {office ? ` — ${office.name}` : ""}
                       </span>
                     </div>
                   </DropdownMenuLabel>

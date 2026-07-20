@@ -1,4 +1,6 @@
-// Child Labor Project — Beneficiary record: Details Entry / Progress Reports / Leaving.
+// Child Labor Project — Beneficiary record: Details / Progress Reports / Leaving.
+// Editing is gated to users who own the record's office. Approval is shown and
+// can be granted by office admins / super admin.
 import { useState } from "react";
 import { Link, useParams } from "wouter";
 import {
@@ -9,12 +11,16 @@ import {
   createReport,
   getLeaving,
   startLeaving,
-  getCurrentProject,
+  getOffice,
   fileToDataUrl,
+  downloadFile,
+  approveBeneficiary,
+  seasonalCardLabel,
+  getCurrentSeason,
 } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { EditTextField, EditSelectField } from "@/components/EditField";
-import { SectionCard, StatusPill, HealthPill } from "@/components/ui-bits";
+import { SectionCard, StatusPill, HealthPill, ApprovalPill, OfficePill } from "@/components/ui-bits";
 import {
   GENDER_LABELS,
   HEALTH_LABELS,
@@ -28,6 +34,7 @@ import {
   REPORT_TYPE_LABELS,
   REPORT_PERIOD_OPTIONS,
   CYCLE_YEAR_OPTIONS,
+  SEASON_LABELS,
 } from "@/lib/options";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -56,28 +63,35 @@ import {
   Smile,
   Users,
   GraduationCap,
+  Coins,
+  Gift,
   FileText,
   Plus,
   Upload,
+  Download,
   LogOut,
   CalendarDays,
+  CheckCircle2,
+  Lock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { LeavingReason, ReportType } from "@/lib/types";
+import type { LeavingReason, ReportType, Beneficiary } from "@/lib/types";
 
 const TABS = ["details", "reports", "leaving"] as const;
 type Tab = (typeof TABS)[number];
 
 export default function BeneficiaryDetail() {
   const { id } = useParams();
-  const { canEdit } = useAuth();
+  const { user, canEditOffice, canApprove } = useAuth();
   const [tab, setTab] = useState<Tab>("details");
   const [, force] = useState(0);
   const rerender = () => force((n) => n + 1);
 
   const b = getBeneficiary(id ?? "");
   if (!b) return <div className="py-24 text-center text-muted-foreground">Beneficiary not found.</div>;
-  const project = getCurrentProject();
+  const office = getOffice(b.officeId);
+  const editable = canEditOffice(b.officeId);
+  const approver = canApprove(b.officeId);
   const age = computeAge(b.dateOfBirth);
   const reports = listReports(b.id);
   const leaving = getLeaving(b.id);
@@ -87,31 +101,52 @@ export default function BeneficiaryDetail() {
     rerender();
   };
 
+  const approve = () => {
+    approveBeneficiary(b.id, user?.id ?? "");
+    rerender();
+    toast.success("Beneficiary approved.");
+  };
+
   return (
     <div className="space-y-6">
-      <Link
-        href="/beneficiaries"
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-primary"
-      >
+      <Link href="/beneficiaries" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-primary">
         <ChevronLeft className="h-4 w-4" /> Back to beneficiaries
       </Link>
+
+      {/* Approval banner */}
+      {b.approvalStatus === "pending" && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-5 py-3">
+          <div className="flex items-center gap-2 text-sm text-amber-800">
+            <Lock className="h-4 w-4" />
+            This record is pending approval.
+          </div>
+          {approver && (
+            <Button size="sm" onClick={approve}><CheckCircle2 className="mr-1.5 h-4 w-4" /> Approve record</Button>
+          )}
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         {/* Main */}
         <div className="space-y-6">
           {/* Header */}
           <div className="overflow-hidden rounded-xl bg-primary text-primary-foreground card-shadow">
-            <div className="flex items-center gap-4 px-6 py-5">
+            <div className="flex flex-wrap items-center gap-4 px-6 py-5">
               <div>
-                <div className="text-xs font-medium uppercase tracking-wide text-primary-foreground/60">
-                  {b.beneficiaryNumber}
-                </div>
+                <div className="text-xs font-medium uppercase tracking-wide text-primary-foreground/60">{b.beneficiaryNumber}</div>
                 <h1 className="font-display text-2xl font-bold">{b.firstName} {b.lastName}</h1>
                 <div className="mt-1 text-sm text-primary-foreground/80">
                   {GENDER_LABELS[b.gender]} · {age} years · {b.village}
                 </div>
               </div>
-              <div className="ml-auto"><StatusPill status={b.status} /></div>
+              <div className="ml-auto flex flex-col items-end gap-2">
+                <StatusPill status={b.status} />
+                {!editable && (
+                  <span className="inline-flex items-center gap-1 text-[11px] text-primary-foreground/70">
+                    <Lock className="h-3 w-3" /> Read-only
+                  </span>
+                )}
+              </div>
             </div>
             <div className="flex border-t border-white/10">
               {TABS.map((t) => (
@@ -133,107 +168,156 @@ export default function BeneficiaryDetail() {
           {tab === "details" && (
             <div className="space-y-6">
               <SectionCard title="General Information" icon={<UserIcon className="h-4 w-4" />}>
-                <EditTextField label="First Name" value={b.firstName} onSave={(v) => save({ firstName: v })} />
-                <EditTextField label="Last Name" value={b.lastName} onSave={(v) => save({ lastName: v })} />
-                <EditTextField label="Date of Birth" type="date" value={b.dateOfBirth} onSave={(v) => save({ dateOfBirth: v })} />
-                <EditTextField label="Age (auto)" value={String(age ?? "")} display={`${age} years`} onSave={() => {}} />
-                <EditSelectField
-                  label="Gender" value={b.gender} display={GENDER_LABELS[b.gender]}
-                  options={[{ value: "male", label: "Male" }, { value: "female", label: "Female" }]}
-                  onSave={(v) => save({ gender: v })}
-                />
-                <EditTextField label="Language" value={b.language} onSave={(v) => save({ language: v })} />
-                <EditTextField label="Village" value={b.village} onSave={(v) => save({ village: v })} />
+                <EditTextField canEdit={editable} label="First Name" value={b.firstName} onSave={(v) => save({ firstName: v })} />
+                <EditTextField canEdit={editable} label="Last Name" value={b.lastName} onSave={(v) => save({ lastName: v })} />
+                <EditTextField canEdit={editable} label="Date of Birth" type="date" value={b.dateOfBirth} onSave={(v) => save({ dateOfBirth: v })} />
+                <EditTextField canEdit={false} label="Age (auto)" value={String(age ?? "")} display={`${age} years`} onSave={() => {}} />
+                <EditSelectField canEdit={editable} label="Gender" value={b.gender} display={GENDER_LABELS[b.gender]} options={[{ value: "male", label: "Male" }, { value: "female", label: "Female" }]} onSave={(v) => save({ gender: v })} />
+                <EditTextField canEdit={editable} label="Language" value={b.language} onSave={(v) => save({ language: v })} />
+                <EditTextField canEdit={editable} label="Village / Community" value={b.village} onSave={(v) => save({ village: v })} />
               </SectionCard>
 
               <SectionCard title="Health Situation" icon={<HeartPulse className="h-4 w-4" />}>
-                <EditSelectField
-                  label="Health Situation" value={b.healthSituation} display={<HealthPill value={b.healthSituation} />}
-                  options={Object.entries(HEALTH_LABELS).map(([value, label]) => ({ value, label }))}
-                  onSave={(v) => save({ healthSituation: v })}
-                />
+                <EditSelectField canEdit={editable} label="Health Situation" value={b.healthSituation} display={<HealthPill value={b.healthSituation} />} options={Object.entries(HEALTH_LABELS).map(([value, label]) => ({ value, label }))} onSave={(v) => save({ healthSituation: v })} />
               </SectionCard>
 
               <SectionCard title="Social Issues" icon={<Smile className="h-4 w-4" />}>
-                <EditTextField label="Hobbies" value={b.hobbies.join(", ")} display={b.hobbies.join(", ")} onSave={(v) => save({ hobbies: v.split(",").map((s) => s.trim()).filter(Boolean) })} />
-                <EditTextField label="Favorite Color" value={b.favoriteColor} onSave={(v) => save({ favoriteColor: v })} />
-                <EditTextField label="Character" value={b.character.join(", ")} display={b.character.join(", ")} onSave={(v) => save({ character: v.split(",").map((s) => s.trim()).filter(Boolean) })} />
+                <EditTextField canEdit={editable} label="Hobbies" value={b.hobbies.join(", ")} display={b.hobbies.join(", ")} onSave={(v) => save({ hobbies: v.split(",").map((s) => s.trim()).filter(Boolean) })} />
+                <EditTextField canEdit={editable} label="Favorite Color" value={b.favoriteColor} onSave={(v) => save({ favoriteColor: v })} />
+                <EditTextField canEdit={editable} label="Character" value={b.character.join(", ")} display={b.character.join(", ")} onSave={(v) => save({ character: v.split(",").map((s) => s.trim()).filter(Boolean) })} />
               </SectionCard>
 
               <SectionCard title="Family Situation" icon={<Users className="h-4 w-4" />}>
-                <EditSelectField
-                  label="Parents Alive" value={b.parentsAlive} display={PARENTS_ALIVE_LABELS[b.parentsAlive]}
-                  options={Object.entries(PARENTS_ALIVE_LABELS).map(([value, label]) => ({ value, label }))}
-                  onSave={(v) => save({ parentsAlive: v })}
-                />
-                <EditSelectField
-                  label="Lives With" value={b.liveWith} display={LIVE_WITH_LABELS[b.liveWith]}
-                  options={Object.entries(LIVE_WITH_LABELS).map(([value, label]) => ({ value, label }))}
-                  onSave={(v) => save({ liveWith: v, liveWithBothParents: v === "both" })}
-                />
-                <EditTextField label="Siblings" value={b.hasSiblings ? String(b.siblingsCount ?? 0) : "0"} display={b.hasSiblings ? `Yes (${b.siblingsCount ?? 0})` : "No"} onSave={(v) => { const n = Number(v) || 0; save({ hasSiblings: n > 0, siblingsCount: n }); }} />
-                <EditSelectField
-                  label="Type of House" value={b.typeOfHouse} display={HOUSE_LABELS[b.typeOfHouse]}
-                  options={Object.entries(HOUSE_LABELS).map(([value, label]) => ({ value, label }))}
-                  onSave={(v) => save({ typeOfHouse: v })}
-                />
+                <EditSelectField canEdit={editable} label="Parents Alive" value={b.parentsAlive} display={PARENTS_ALIVE_LABELS[b.parentsAlive]} options={Object.entries(PARENTS_ALIVE_LABELS).map(([value, label]) => ({ value, label }))} onSave={(v) => save({ parentsAlive: v })} />
+                <EditSelectField canEdit={editable} label="Lives With" value={b.liveWith} display={LIVE_WITH_LABELS[b.liveWith]} options={Object.entries(LIVE_WITH_LABELS).map(([value, label]) => ({ value, label }))} onSave={(v) => save({ liveWith: v, liveWithBothParents: v === "both" })} />
+                <EditTextField canEdit={editable} label="Siblings" value={b.hasSiblings ? String(b.siblingsCount ?? 0) : "0"} display={b.hasSiblings ? `Yes (${b.siblingsCount ?? 0})` : "No"} onSave={(v) => { const n = Number(v) || 0; save({ hasSiblings: n > 0, siblingsCount: n }); }} />
+                <EditTextField canEdit={editable} label="Guardian's Name" value={b.guardianName} onSave={(v) => save({ guardianName: v })} />
+                <EditTextField canEdit={editable} label="Relation to Child" value={b.relationToChild} onSave={(v) => save({ relationToChild: v })} />
+                <EditSelectField canEdit={editable} label="Type of House" value={b.typeOfHouse} display={HOUSE_LABELS[b.typeOfHouse]} options={Object.entries(HOUSE_LABELS).map(([value, label]) => ({ value, label }))} onSave={(v) => save({ typeOfHouse: v })} />
               </SectionCard>
 
               <SectionCard title="Child Education" icon={<GraduationCap className="h-4 w-4" />}>
-                <EditSelectField
-                  label="School Level" value={b.schoolLevel} display={b.schoolLevel}
-                  options={SCHOOL_LEVEL_OPTIONS.map((s) => ({ value: s, label: s }))}
-                  onSave={(v) => save({ schoolLevel: v })}
-                />
-                <EditSelectField
-                  label="School Performance" value={b.schoolPerformance} display={PERFORMANCE_LABELS[b.schoolPerformance]}
-                  options={Object.entries(PERFORMANCE_LABELS).map(([value, label]) => ({ value, label }))}
-                  onSave={(v) => save({ schoolPerformance: v })}
-                />
-                <EditSelectField
-                  label="Favorite Subject" value={b.favoriteSubject} display={b.favoriteSubject}
-                  options={FAVORITE_SUBJECT_OPTIONS.map((s) => ({ value: s, label: s }))}
-                  onSave={(v) => save({ favoriteSubject: v })}
-                />
-                <EditTextField label="Future Plans" value={b.futurePlans} onSave={(v) => save({ futurePlans: v })} />
+                <EditTextField canEdit={editable} label="School Name" value={b.schoolName} onSave={(v) => save({ schoolName: v })} />
+                <EditSelectField canEdit={editable} label="Grade / Level" value={b.schoolLevel} display={b.schoolLevel} options={SCHOOL_LEVEL_OPTIONS.map((s) => ({ value: s, label: s }))} onSave={(v) => save({ schoolLevel: v })} />
+                <EditSelectField canEdit={editable} label="School Performance" value={b.schoolPerformance} display={PERFORMANCE_LABELS[b.schoolPerformance]} options={Object.entries(PERFORMANCE_LABELS).map(([value, label]) => ({ value, label }))} onSave={(v) => save({ schoolPerformance: v })} />
+                <EditSelectField canEdit={editable} label="Favorite Subject" value={b.favoriteSubject} display={b.favoriteSubject} options={FAVORITE_SUBJECT_OPTIONS.map((s) => ({ value: s, label: s }))} onSave={(v) => save({ favoriteSubject: v })} />
+                <EditTextField canEdit={editable} label="Future Plans" value={b.futurePlans} onSave={(v) => save({ futurePlans: v })} />
+              </SectionCard>
+
+              <SectionCard title="Scholarship & Sponsorship" icon={<Coins className="h-4 w-4" />}>
+                <EditTextField canEdit={editable} type="number" label="Annual Tuition (EGP)" value={String(b.tuitionFees ?? "")} display={b.tuitionFees ? `${b.tuitionFees.toLocaleString()} EGP` : "—"} onSave={(v) => save({ tuitionFees: v ? Number(v) : undefined })} />
+                <EditTextField canEdit={editable} type="number" label="Amount Sponsored (EGP)" value={String(b.amountSponsored ?? "")} display={b.amountSponsored ? `${b.amountSponsored.toLocaleString()} EGP` : "—"} onSave={(v) => save({ amountSponsored: v ? Number(v) : undefined })} />
+                <EditTextField canEdit={editable} label="Additional Aid" value={b.additionalAid} onSave={(v) => save({ additionalAid: v })} />
+                <EditTextField canEdit={editable} label="Reason for Scholarship" value={b.scholarshipReason} onSave={(v) => save({ scholarshipReason: v })} />
+                <EditTextField canEdit={editable} label="How It Helps" value={b.scholarshipImpact} onSave={(v) => save({ scholarshipImpact: v })} />
               </SectionCard>
             </div>
           )}
 
           {tab === "reports" && (
-            <ReportsTab beneficiaryId={b.id} canEdit={canEdit} reports={reports} onChange={rerender} />
+            <ReportsTab beneficiaryId={b.id} canEdit={editable} reports={reports} onChange={rerender} />
           )}
 
           {tab === "leaving" && (
-            <LeavingTab beneficiaryId={b.id} canEdit={canEdit} leaving={leaving} onChange={rerender} />
+            <LeavingTab beneficiaryId={b.id} canEdit={editable} leaving={leaving} onChange={rerender} />
           )}
         </div>
 
-        {/* Right rail: photo */}
+        {/* Right rail */}
         <div className="space-y-6">
+          {/* Photo */}
           <div className="rounded-xl border border-border bg-card p-4 card-shadow">
             <div className="aspect-square w-full overflow-hidden rounded-lg bg-muted">
               {b.photoUrl ? (
                 <img src={b.photoUrl} alt={b.firstName} className="h-full w-full object-cover" />
               ) : (
-                <div className="grid h-full place-items-center text-muted-foreground">
-                  <UserIcon className="h-12 w-12" />
-                </div>
+                <div className="grid h-full place-items-center text-muted-foreground"><UserIcon className="h-12 w-12" /></div>
               )}
             </div>
-            {canEdit && <PhotoDialog onSave={(url) => save({ photoUrl: url })} />}
+            <div className="mt-3 flex gap-2">
+              {b.photoUrl && (
+                <Button variant="outline" className="flex-1 bg-card" onClick={() => downloadFile(b.photoUrl!, `${b.beneficiaryNumber}-photo.jpg`)}>
+                  <Download className="mr-2 h-4 w-4" /> Download
+                </Button>
+              )}
+              {editable && <PhotoDialog onSave={(url) => save({ photoUrl: url })} />}
+            </div>
           </div>
 
+          {/* Seasonal card */}
+          <SeasonalCard beneficiary={b} canEdit={editable} onSave={save} />
+
+          {/* Quick info */}
           <div className="rounded-xl border border-border bg-card p-4 card-shadow">
             <h4 className="mb-3 font-display text-sm font-semibold text-primary">Quick info</h4>
-            <dl className="space-y-2 text-sm">
-              <div className="flex justify-between"><dt className="text-muted-foreground">Project</dt><dd className="font-medium">{project?.projectName ?? "—"}</dd></div>
+            <dl className="space-y-2.5 text-sm">
+              <div className="flex items-center justify-between"><dt className="text-muted-foreground">Office</dt><dd>{office ? <OfficePill name={office.name} /> : "—"}</dd></div>
+              <div className="flex items-center justify-between"><dt className="text-muted-foreground">Approval</dt><dd><ApprovalPill status={b.approvalStatus} /></dd></div>
               <div className="flex justify-between"><dt className="text-muted-foreground">Number</dt><dd className="font-medium">{b.beneficiaryNumber}</dd></div>
               <div className="flex justify-between"><dt className="text-muted-foreground">Age</dt><dd className="font-medium">{age} years</dd></div>
-              <div className="flex justify-between"><dt className="text-muted-foreground">Health</dt><dd><HealthPill value={b.healthSituation} /></dd></div>
+              <div className="flex items-center justify-between"><dt className="text-muted-foreground">Health</dt><dd><HealthPill value={b.healthSituation} /></dd></div>
+              <div className="flex justify-between"><dt className="text-muted-foreground">School</dt><dd className="font-medium text-right">{b.schoolName || "—"}</dd></div>
             </dl>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- Seasonal card
+function SeasonalCard({
+  beneficiary: b,
+  canEdit,
+  onSave,
+}: {
+  beneficiary: Beneficiary;
+  canEdit: boolean;
+  onSave: (patch: Record<string, unknown>) => void;
+}) {
+  const currentLabel = seasonalCardLabel();
+  const storedLabel = b.seasonalCardSeason ? SEASON_LABELS[b.seasonalCardSeason] : currentLabel;
+
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const url = await fileToDataUrl(file);
+      onSave({
+        seasonalCardUrl: url,
+        seasonalCardSeason: getCurrentSeason(),
+        seasonalCardUpdatedAt: new Date().toISOString().slice(0, 10),
+      });
+      toast.success("Card uploaded.");
+    } catch {
+      toast.error("Could not read that image.");
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-4 card-shadow">
+      <h4 className="mb-3 flex items-center gap-2 font-display text-sm font-semibold text-primary">
+        <Gift className="h-4 w-4" /> {b.seasonalCardUrl ? storedLabel : currentLabel}
+      </h4>
+      <div className="aspect-video w-full overflow-hidden rounded-lg bg-muted">
+        {b.seasonalCardUrl ? (
+          <img src={b.seasonalCardUrl} alt="Card" className="h-full w-full object-contain" />
+        ) : (
+          <div className="grid h-full place-items-center text-muted-foreground"><Gift className="h-10 w-10" /></div>
+        )}
+      </div>
+      <div className="mt-3 flex gap-2">
+        {b.seasonalCardUrl && (
+          <Button variant="outline" className="flex-1 bg-card" onClick={() => downloadFile(b.seasonalCardUrl!, `${b.beneficiaryNumber}-card.jpg`)}>
+            <Download className="mr-2 h-4 w-4" /> Download
+          </Button>
+        )}
+        {canEdit && (
+          <label className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-primary hover:bg-muted/40">
+            <Upload className="h-4 w-4" /> {b.seasonalCardUrl ? "Replace" : "Upload"}
+            <input type="file" accept="image/*" className="hidden" onChange={onFile} />
+          </label>
+        )}
       </div>
     </div>
   );
@@ -255,7 +339,7 @@ function PhotoDialog({ onSave }: { onSave: (url: string) => void }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" className="mt-3 w-full bg-card"><Upload className="mr-2 h-4 w-4" /> Update Photo</Button>
+        <Button variant="outline" className="flex-1 bg-card"><Upload className="mr-2 h-4 w-4" /> Update</Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader><DialogTitle>Update Photo</DialogTitle></DialogHeader>
@@ -269,6 +353,7 @@ function PhotoDialog({ onSave }: { onSave: (url: string) => void }) {
   );
 }
 
+// ---------------------------------------------------------------- Reports
 function ReportsTab({
   beneficiaryId,
   canEdit,
@@ -289,15 +374,14 @@ function ReportsTab({
   const [messageToSponsor, setMessageToSponsor] = useState("");
   const [beneficiaryUpdate, setBeneficiaryUpdate] = useState("");
   const [photo, setPhoto] = useState("");
+  const [typeFilter, setTypeFilter] = useState<"all" | ReportType>("all");
 
-  // Switching the report type resets the period to the first valid option.
   const changeType = (v: string) => {
     const t = v as ReportType;
     setReportType(t);
     setPeriod(REPORT_PERIOD_OPTIONS[t][0]);
   };
 
-  const [typeFilter, setTypeFilter] = useState<"all" | ReportType>("all");
   const visible = typeFilter === "all" ? reports : reports.filter((r) => r.reportType === typeFilter);
 
   const submit = () => {
@@ -305,16 +389,9 @@ function ReportsTab({
       toast.error("Please write a message or an update.");
       return;
     }
-    const duplicate = reports.some(
-      (r) =>
-        r.reportType === reportType &&
-        r.period === period &&
-        r.cycleYear === Number(cycleYear),
-    );
+    const duplicate = reports.some((r) => r.reportType === reportType && r.period === period && r.cycleYear === Number(cycleYear));
     if (duplicate) {
-      toast.error(
-        `A ${REPORT_TYPE_LABELS[reportType]} report for ${period} (Year ${cycleYear}) already exists.`,
-      );
+      toast.error(`A ${REPORT_TYPE_LABELS[reportType]} report for ${period} (Year ${cycleYear}) already exists.`);
       return;
     }
     createReport({
@@ -339,14 +416,10 @@ function ReportsTab({
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h3 className="font-display text-base font-semibold text-primary">
-          Individual Progress Reports
-        </h3>
+        <h3 className="font-display text-base font-semibold text-primary">Individual Progress Reports</h3>
         {canEdit && (
           <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-              <Button><Plus className="mr-1.5 h-4 w-4" /> New Report</Button>
-            </DialogTrigger>
+            <DialogTrigger asChild><Button><Plus className="mr-1.5 h-4 w-4" /> New Report</Button></DialogTrigger>
             <DialogContent className="max-h-[85vh] overflow-y-auto">
               <DialogHeader><DialogTitle>New Progress Report</DialogTitle></DialogHeader>
               <div className="space-y-4">
@@ -355,97 +428,48 @@ function ReportsTab({
                     <Label>Report type</Label>
                     <Select value={reportType} onValueChange={changeType}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {Object.entries(REPORT_TYPE_LABELS).map(([value, label]) => (
-                          <SelectItem key={value} value={value}>{label}</SelectItem>
-                        ))}
-                      </SelectContent>
+                      <SelectContent>{Object.entries(REPORT_TYPE_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-2">
                     <Label>Period</Label>
                     <Select value={period} onValueChange={setPeriod}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {REPORT_PERIOD_OPTIONS[reportType].map((p) => (
-                          <SelectItem key={p} value={p}>{p}</SelectItem>
-                        ))}
-                      </SelectContent>
+                      <SelectContent>{REPORT_PERIOD_OPTIONS[reportType].map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
                     </Select>
                   </div>
                 </div>
-
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Program year</Label>
                     <Select value={cycleYear} onValueChange={setCycleYear}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {CYCLE_YEAR_OPTIONS.map((y) => (
-                          <SelectItem key={y} value={String(y)}>Year {y}</SelectItem>
-                        ))}
-                      </SelectContent>
+                      <SelectContent>{CYCLE_YEAR_OPTIONS.map((y) => <SelectItem key={y} value={String(y)}>Year {y}</SelectItem>)}</SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-2">
-                    <Label>Report date</Label>
-                    <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-                  </div>
+                  <div className="space-y-2"><Label>Report date</Label><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
                 </div>
-
                 <div className="space-y-2">
                   <Label>Update photo</Label>
                   <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-primary hover:bg-muted/40">
                     <Upload className="h-4 w-4" /> {photo ? "Photo selected" : "Choose photo"}
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={async (e) => {
-                        const f = e.target.files?.[0];
-                        if (!f) return;
-                        try {
-                          setPhoto(await fileToDataUrl(f));
-                        } catch {
-                          toast.error("Could not read that image.");
-                        }
-                      }}
-                    />
+                    <input type="file" accept="image/*" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; try { setPhoto(await fileToDataUrl(f)); } catch { toast.error("Could not read that image."); } }} />
                   </label>
                 </div>
-                <div className="space-y-2">
-                  <Label>Message to the sponsor</Label>
-                  <Textarea rows={3} value={messageToSponsor} onChange={(e) => setMessageToSponsor(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Beneficiary update</Label>
-                  <Textarea rows={3} value={beneficiaryUpdate} onChange={(e) => setBeneficiaryUpdate(e.target.value)} />
-                </div>
+                <div className="space-y-2"><Label>Message to the sponsor</Label><Textarea rows={3} value={messageToSponsor} onChange={(e) => setMessageToSponsor(e.target.value)} /></div>
+                <div className="space-y-2"><Label>Beneficiary update</Label><Textarea rows={3} value={beneficiaryUpdate} onChange={(e) => setBeneficiaryUpdate(e.target.value)} /></div>
               </div>
-              <DialogFooter>
-                <Button onClick={submit}>Save Report</Button>
-              </DialogFooter>
+              <DialogFooter><Button onClick={submit}>Save Report</Button></DialogFooter>
             </DialogContent>
           </Dialog>
         )}
       </div>
 
-      {/* Type filter */}
       <div className="flex flex-wrap items-center gap-1 rounded-lg border border-border bg-card p-1">
         {(["all", "quarterly", "semi_annual", "annual"] as const).map((t) => {
-          const count =
-            t === "all" ? reports.length : reports.filter((r) => r.reportType === t).length;
+          const count = t === "all" ? reports.length : reports.filter((r) => r.reportType === t).length;
           return (
-            <button
-              key={t}
-              onClick={() => setTypeFilter(t)}
-              className={cn(
-                "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-                typeFilter === t
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-primary",
-              )}
-            >
+            <button key={t} onClick={() => setTypeFilter(t)} className={cn("rounded-md px-3 py-1.5 text-sm font-medium transition-colors", typeFilter === t ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-primary")}>
               {t === "all" ? "All" : REPORT_TYPE_LABELS[t]}
               <span className="ml-1.5 opacity-60">{count}</span>
             </button>
@@ -455,8 +479,7 @@ function ReportsTab({
 
       {visible.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border bg-card py-14 text-center text-muted-foreground">
-          <FileText className="mx-auto mb-2 h-8 w-8" />
-          No progress reports yet.
+          <FileText className="mx-auto mb-2 h-8 w-8" /> No progress reports yet.
         </div>
       ) : (
         <div className="space-y-4">
@@ -464,31 +487,17 @@ function ReportsTab({
             <div key={r.id} className="rounded-xl border border-border bg-card p-5 card-shadow">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded-full bg-[var(--color-brand-green)]/12 px-2.5 py-0.5 text-xs font-semibold text-[var(--color-brand-green)]">
-                    {REPORT_TYPE_LABELS[r.reportType]}
-                  </span>
-                  <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
-                    {r.period}
-                  </span>
+                  <span className="rounded-full bg-[var(--color-brand-green)]/12 px-2.5 py-0.5 text-xs font-semibold text-[var(--color-brand-green)]">{REPORT_TYPE_LABELS[r.reportType]}</span>
+                  <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">{r.period}</span>
                   <span className="text-xs text-muted-foreground">Year {r.cycleYear}</span>
                 </div>
-                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <CalendarDays className="h-3.5 w-3.5" /> {r.date}
-                </span>
+                <span className="flex items-center gap-1.5 text-xs text-muted-foreground"><CalendarDays className="h-3.5 w-3.5" /> {r.date}</span>
               </div>
               <div className="mt-4 grid gap-4 sm:grid-cols-[auto_1fr]">
-                {r.updatePhotoUrl && (
-                  <img src={r.updatePhotoUrl} alt="Update" className="h-24 w-24 rounded-lg object-cover" />
-                )}
+                {r.updatePhotoUrl && <img src={r.updatePhotoUrl} alt="Update" className="h-24 w-24 rounded-lg object-cover" />}
                 <div className="space-y-3">
-                  <div>
-                    <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Message to sponsor</div>
-                    <p className="mt-0.5 text-sm">{r.messageToSponsor || "—"}</p>
-                  </div>
-                  <div>
-                    <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Beneficiary update</div>
-                    <p className="mt-0.5 text-sm">{r.beneficiaryUpdate || "—"}</p>
-                  </div>
+                  <div><div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Message to sponsor</div><p className="mt-0.5 text-sm">{r.messageToSponsor || "—"}</p></div>
+                  <div><div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Beneficiary update</div><p className="mt-0.5 text-sm">{r.beneficiaryUpdate || "—"}</p></div>
                 </div>
               </div>
             </div>
@@ -499,6 +508,7 @@ function ReportsTab({
   );
 }
 
+// ---------------------------------------------------------------- Leaving
 function LeavingTab({
   beneficiaryId,
   canEdit,
@@ -516,13 +526,7 @@ function LeavingTab({
   const [explanation, setExplanation] = useState("");
 
   const submit = () => {
-    startLeaving({
-      beneficiaryId,
-      reason,
-      explanation,
-      date: new Date().toISOString().slice(0, 10),
-      authorUserId: user?.id ?? "u-editor",
-    });
+    startLeaving({ beneficiaryId, reason, explanation, date: new Date().toISOString().slice(0, 10), authorUserId: user?.id ?? "u-editor" });
     setOpen(false);
     onChange();
     toast.success("Leaving record started.");
@@ -532,18 +536,9 @@ function LeavingTab({
     return (
       <SectionCard title="Leaving Record" icon={<LogOut className="h-4 w-4" />}>
         <div className="space-y-3 text-sm">
-          <div className="flex justify-between border-b border-border/70 pb-3">
-            <span className="text-muted-foreground">Reason</span>
-            <span className="font-medium">{LEAVING_REASON_LABELS[leaving.reason]}</span>
-          </div>
-          <div className="flex justify-between border-b border-border/70 pb-3">
-            <span className="text-muted-foreground">Date</span>
-            <span className="font-medium">{leaving.date}</span>
-          </div>
-          <div>
-            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Explanation</div>
-            <p className="mt-1">{leaving.explanation || "—"}</p>
-          </div>
+          <div className="flex justify-between border-b border-border/70 pb-3"><span className="text-muted-foreground">Reason</span><span className="font-medium">{LEAVING_REASON_LABELS[leaving.reason]}</span></div>
+          <div className="flex justify-between border-b border-border/70 pb-3"><span className="text-muted-foreground">Date</span><span className="font-medium">{leaving.date}</span></div>
+          <div><div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Explanation</div><p className="mt-1">{leaving.explanation || "—"}</p></div>
         </div>
       </SectionCard>
     );
@@ -552,14 +547,10 @@ function LeavingTab({
   return (
     <div className="rounded-xl border border-dashed border-border bg-card py-14 text-center">
       <LogOut className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-      <p className="mb-4 text-sm text-muted-foreground">
-        This beneficiary is still active in the program.
-      </p>
+      <p className="mb-4 text-sm text-muted-foreground">This beneficiary is still active in the program.</p>
       {canEdit && (
         <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button variant="destructive"><LogOut className="mr-1.5 h-4 w-4" /> Start Leaving</Button>
-          </DialogTrigger>
+          <DialogTrigger asChild><Button variant="destructive"><LogOut className="mr-1.5 h-4 w-4" /> Start Leaving</Button></DialogTrigger>
           <DialogContent>
             <DialogHeader><DialogTitle>Start Leaving</DialogTitle></DialogHeader>
             <div className="space-y-4">
@@ -567,21 +558,12 @@ function LeavingTab({
                 <Label>Why is the beneficiary leaving?</Label>
                 <Select value={reason} onValueChange={(v) => setReason(v as LeavingReason)}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(LEAVING_REASON_LABELS).map(([value, label]) => (
-                      <SelectItem key={value} value={value}>{label}</SelectItem>
-                    ))}
-                  </SelectContent>
+                  <SelectContent>{Object.entries(LEAVING_REASON_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label>Explanation (optional)</Label>
-                <Textarea rows={3} value={explanation} onChange={(e) => setExplanation(e.target.value)} />
-              </div>
+              <div className="space-y-2"><Label>Explanation (optional)</Label><Textarea rows={3} value={explanation} onChange={(e) => setExplanation(e.target.value)} /></div>
             </div>
-            <DialogFooter>
-              <Button variant="destructive" onClick={submit}>Confirm Leaving</Button>
-            </DialogFooter>
+            <DialogFooter><Button variant="destructive" onClick={submit}>Confirm Leaving</Button></DialogFooter>
           </DialogContent>
         </Dialog>
       )}
