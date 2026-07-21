@@ -118,9 +118,6 @@ export default function Login() {
           <div className="mt-8 rounded-lg border border-dashed border-border bg-muted/40 p-4 text-xs">
             <p className="mb-2 font-medium text-foreground">Demo accounts (any password):</p>
             <div className="grid gap-1.5">
-              <button onClick={() => quick("super@clp.org")} className="text-left text-muted-foreground hover:text-primary">
-                super@clp.org — <span className="font-medium">Super Admin</span>
-              </button>
               <button onClick={() => quick("admin.cairo@clp.org")} className="text-left text-muted-foreground hover:text-primary">
                 admin.cairo@clp.org — <span className="font-medium">Cairo Admin</span>
               </button>

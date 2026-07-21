@@ -40,7 +40,8 @@ const OFFICE_ROLES: Role[] = ["office_admin", "editor"];
 export default function Users() {
   const [, force] = useState(0);
   const rerender = () => force((n) => n + 1);
-  const users = listUsers();
+  // Super admin accounts are managed privately and hidden from the accounts list.
+  const users = listUsers().filter((u) => u.role !== "super_admin");
   const offices = listOffices();
   const officeName = (id: string | null) => (id ? offices.find((o) => o.id === id)?.name ?? "—" : "—");
 
