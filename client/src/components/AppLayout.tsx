@@ -22,6 +22,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import Footer from "./Footer";
 
 const ICON_URL = "/favicon.png";
 
@@ -51,7 +52,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     : "?";
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="flex min-h-screen flex-col bg-background">
       <header className="sticky top-0 z-40 bg-primary text-primary-foreground shadow-md">
         <div className="container flex h-16 items-center gap-6">
           <Link href="/dashboard" className="flex items-center gap-2.5">
@@ -157,7 +158,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <main className="container py-7">{children}</main>
+      <main className="container flex-1 py-7">{children}</main>
+      <Footer />
     </div>
   );
 }
