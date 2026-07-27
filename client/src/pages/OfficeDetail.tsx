@@ -9,7 +9,7 @@ import {
   listOfficeReports,
   createOfficeReport,
   deleteOfficeReport,
-  fileToDataUrl,
+  saveDocumentFile,
   downloadFile,
   approveBeneficiary,
 } from "@/lib/api";
@@ -351,10 +351,10 @@ function ReportsTab({
     if (!file) return toast.error("Please choose a Word or PDF file.");
     const fileType = detectType(file);
     if (!fileType) return toast.error("Only Word (.doc/.docx) or PDF files are allowed.");
-    if (file.size > 8 * 1024 * 1024)
-      return toast.error("File is too large for the demo (max 8 MB). Object storage lands in Phase 2.");
+    if (file.size > 25 * 1024 * 1024)
+      return toast.error("File is too large (max 25 MB).");
     try {
-      const fileUrl = await fileToDataUrl(file);
+      const fileUrl = await saveDocumentFile(file, officeId);
       createOfficeReport({
         officeId,
         year: Number(year) || new Date().getFullYear(),

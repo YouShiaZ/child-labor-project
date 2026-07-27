@@ -7,7 +7,8 @@ import {
   getOffice,
   computeAge,
   nextBeneficiaryNumber,
-  fileToDataUrl,
+  saveImageFile,
+  saveImageDataUrl,
   seasonalCardLabel,
   getCurrentSeason,
 } from "@/lib/api";
@@ -117,13 +118,14 @@ export default function NewBeneficiary() {
   // Guard: only users who can edit THIS office may add here.
   if (!canEditOffice(office.id)) return <Redirect to={`/offices/${office.id}`} />;
 
-  const onPhoto = async (e: React.ChangeEvent<HTMLInputElement>, set: (v: string) => void) => {
+  // Card image upload (goes to Storage in real mode).
+  const onCard = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      set(await fileToDataUrl(file));
+      setCardUrl(await saveImageFile(file, "card", office.id));
     } catch {
-      toast.error("Could not read that image.");
+      toast.error("Could not upload that image.");
     }
   };
 
@@ -240,7 +242,10 @@ export default function NewBeneficiary() {
               </div>
               <ImageCropper
                 title="Adjust child's photo"
-                onCropped={(url) => setPhotoUrl(url)}
+                onCropped={async (url) => {
+                  try { setPhotoUrl(await saveImageDataUrl(url, "photo", office.id)); }
+                  catch { toast.error("Could not upload that image."); }
+                }}
                 trigger={
                   <button type="button" className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-primary hover:bg-muted/40">
                     <Upload className="h-4 w-4" /> {photoUrl ? "Change photo" : "Upload photo"}
@@ -394,7 +399,7 @@ export default function NewBeneficiary() {
               </p>
               <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-primary hover:bg-muted/40">
                 <Upload className="h-4 w-4" /> Upload card
-                <input type="file" accept="image/*" className="hidden" onChange={(e) => onPhoto(e, setCardUrl)} />
+                <input type="file" accept="image/*" className="hidden" onChange={onCard} />
               </label>
             </div>
           </div>

@@ -1,10 +1,11 @@
 // Child Labor Project — app shell: navy navbar + primary nav + user menu.
 import { Link, useLocation } from "wouter";
-import { type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { ROLE_LABELS } from "@/lib/options";
 import { getOffice } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import ChangePasswordDialog from "./ChangePasswordDialog";
 import {
   LayoutDashboard,
   Building2,
@@ -12,6 +13,7 @@ import {
   Users,
   BarChart3,
   LogOut,
+  KeyRound,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -36,6 +38,7 @@ const NAV = [
 export default function AppLayout({ children }: { children: ReactNode }) {
   const [location, navigate] = useLocation();
   const { user, logout, canManageUsers } = useAuth();
+  const [pwOpen, setPwOpen] = useState(false);
 
   const nav = [...NAV];
   if (canManageUsers) nav.push({ href: "/users", label: "Users", icon: Users });
@@ -120,9 +123,13 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                     </div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setPwOpen(true)}>
+                    <KeyRound className="mr-2 h-4 w-4" />
+                    Change password
+                  </DropdownMenuItem>
                   <DropdownMenuItem
-                    onClick={() => {
-                      logout();
+                    onClick={async () => {
+                      await logout();
                       navigate("/login");
                     }}
                     className="text-rose-600 focus:text-rose-600"
@@ -160,6 +167,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
       <main className="container flex-1 py-7">{children}</main>
       <Footer />
+      <ChangePasswordDialog open={pwOpen} onOpenChange={setPwOpen} />
     </div>
   );
 }

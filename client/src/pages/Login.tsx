@@ -1,6 +1,6 @@
 // Child Labor Project — Login page. Mock auth in Phase 1 (see AuthContext);
 // swap for Supabase Auth in Phase 2. Navy/green brand split layout.
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -16,17 +16,24 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  if (user) {
-    navigate("/dashboard");
-    return null;
-  }
+  useEffect(() => {
+    if (user) navigate("/dashboard");
+  }, [user, navigate]);
+  if (user) return null;
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = login(email, password);
-    if (res.ok) navigate("/dashboard");
-    else setError(res.error ?? "Login failed.");
+    setError(null);
+    setBusy(true);
+    try {
+      const res = await login(email, password);
+      if (res.ok) navigate("/dashboard");
+      else setError(res.error ?? "Login failed.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -106,8 +113,8 @@ export default function Login() {
               </div>
             )}
 
-            <Button type="submit" className="w-full" size="lg">
-              Sign in
+            <Button type="submit" className="w-full" size="lg" disabled={busy}>
+              {busy ? "Signing in…" : "Sign in"}
             </Button>
           </form>
         </div>

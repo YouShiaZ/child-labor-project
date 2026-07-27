@@ -12,7 +12,8 @@ import {
   getLeaving,
   startLeaving,
   getOffice,
-  fileToDataUrl,
+  saveImageFile,
+  saveImageDataUrl,
   downloadFile,
   approveBeneficiary,
   seasonalCardLabel,
@@ -219,7 +220,7 @@ export default function BeneficiaryDetail() {
           )}
 
           {tab === "reports" && (
-            <ReportsTab beneficiaryId={b.id} canEdit={editable} reports={reports} onChange={rerender} />
+            <ReportsTab beneficiaryId={b.id} officeId={b.officeId} canEdit={editable} reports={reports} onChange={rerender} />
           )}
 
           {tab === "leaving" && (
@@ -248,7 +249,10 @@ export default function BeneficiaryDetail() {
               {editable && (
                 <ImageCropper
                   title="Adjust photo"
-                  onCropped={(url) => save({ photoUrl: url })}
+                  onCropped={async (url) => {
+                    try { save({ photoUrl: await saveImageDataUrl(url, "photo", b.officeId) }); }
+                    catch { toast.error("Could not upload that image."); }
+                  }}
                   trigger={
                     <Button variant="outline" className="flex-1 bg-card">
                       <Upload className="mr-2 h-4 w-4" /> Update
@@ -304,12 +308,12 @@ function SeasonalCards({
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const url = await fileToDataUrl(file);
+      const url = await saveImageFile(file, "card", b.officeId);
       addSeasonalCard(b.id, url);
       onChange();
       toast.success(`${uploadLabel} uploaded.`);
     } catch {
-      toast.error("Could not read that image.");
+      toast.error("Could not upload that image.");
     }
     e.target.value = "";
   };
@@ -419,11 +423,13 @@ function ProgressPhotos({
 // ---------------------------------------------------------------- Reports
 function ReportsTab({
   beneficiaryId,
+  officeId,
   canEdit,
   reports,
   onChange,
 }: {
   beneficiaryId: string;
+  officeId: string;
   canEdit: boolean;
   reports: ReturnType<typeof listReports>;
   onChange: () => void;
@@ -516,7 +522,7 @@ function ReportsTab({
                   <Label>Update photo</Label>
                   <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-primary hover:bg-muted/40">
                     <Upload className="h-4 w-4" /> {photo ? "Photo selected" : "Choose photo"}
-                    <input type="file" accept="image/*" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; try { setPhoto(await fileToDataUrl(f)); } catch { toast.error("Could not read that image."); } }} />
+                    <input type="file" accept="image/*" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; try { setPhoto(await saveImageFile(f, "photo", officeId)); } catch { toast.error("Could not upload that image."); } }} />
                   </label>
                 </div>
                 <div className="space-y-2"><Label>Message to the sponsor</Label><Textarea rows={3} value={messageToSponsor} onChange={(e) => setMessageToSponsor(e.target.value)} /></div>

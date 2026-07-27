@@ -1,7 +1,10 @@
-// Child Labor Project — Super-admin-only user management.
-// Create Office Admin / Editor / Viewer accounts and assign them to an office.
+// Child Labor Project — Super-admin-only account management.
+// Create Office Admin / Editor / Viewer accounts, assign office, reset passwords.
+// Real mode routes create/delete/reset through secure Edge Functions; demo mode
+// uses the local store.
 import { useState } from "react";
 import { listUsers, listOffices, createUser, updateUser, deleteUser } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
 import { ROLE_LABELS } from "@/lib/options";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,8 +26,8 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { UserPlus, Trash2, ShieldCheck, ShieldHalf, Pencil, Eye } from "lucide-react";
-import type { Role } from "@/lib/types";
+import { UserPlus, Trash2, ShieldCheck, ShieldHalf, Pencil, Eye, KeyRound } from "lucide-react";
+import type { Role, User } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const ROLE_BADGE: Record<Role, string> = {
@@ -33,41 +36,74 @@ const ROLE_BADGE: Record<Role, string> = {
   editor: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
   viewer: "bg-slate-100 text-slate-600 ring-slate-500/20",
 };
-
-// Roles that must belong to an office.
 const OFFICE_ROLES: Role[] = ["office_admin", "editor"];
 
 export default function Users() {
+  const { backend, adminCreateUser, adminDeleteUser, adminResetPassword } = useAuth();
+  const isReal = backend === "supabase";
   const [, force] = useState(0);
   const rerender = () => force((n) => n + 1);
-  // Super admin accounts are managed privately and hidden from the accounts list.
   const users = listUsers().filter((u) => u.role !== "super_admin");
   const offices = listOffices();
   const officeName = (id: string | null) => (id ? offices.find((o) => o.id === id)?.name ?? "—" : "—");
 
+  // create dialog
   const [open, setOpen] = useState(false);
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<Role>("editor");
   const [officeId, setOfficeId] = useState<string>(offices[0]?.id ?? "");
   const [password, setPassword] = useState("");
-
+  const [busy, setBusy] = useState(false);
   const needsOffice = OFFICE_ROLES.includes(role);
 
-  const submit = () => {
+  // reset-password dialog
+  const [resetFor, setResetFor] = useState<User | null>(null);
+  const [newPw, setNewPw] = useState("");
+
+  const submitCreate = async () => {
     if (!fullName.trim() || !email.trim()) return toast.error("Please enter a full name and email.");
     if (needsOffice && !officeId) return toast.error("Please choose an office for this role.");
-    createUser({
-      fullName,
-      email,
-      role,
-      officeId: needsOffice ? officeId : null,
-      active: true,
-    });
+    if (isReal && password.length < 8) return toast.error("Set an initial password (min 8 characters).");
+    setBusy(true);
+    if (isReal) {
+      const res = await adminCreateUser({ fullName, email, password, role, officeId: needsOffice ? officeId : null });
+      setBusy(false);
+      if (!res.ok) return toast.error(res.error ?? "Could not create the account.");
+    } else {
+      createUser({ fullName, email, role, officeId: needsOffice ? officeId : null, active: true });
+      setBusy(false);
+    }
     setFullName(""); setEmail(""); setRole("editor"); setPassword("");
     setOpen(false);
     rerender();
     toast.success("User account created.");
+  };
+
+  const remove = async (u: User) => {
+    if (isReal) {
+      const res = await adminDeleteUser(u.id);
+      if (!res.ok) return toast.error(res.error ?? "Could not remove the account.");
+    } else {
+      deleteUser(u.id);
+    }
+    rerender();
+    toast.success("User removed.");
+  };
+
+  const submitReset = async () => {
+    if (!resetFor) return;
+    if (newPw.length < 8) return toast.error("Password must be at least 8 characters.");
+    setBusy(true);
+    const res = await adminResetPassword(resetFor.id, newPw);
+    setBusy(false);
+    if (res.ok) {
+      toast.success(`Password reset for ${resetFor.fullName}.`);
+      setResetFor(null);
+      setNewPw("");
+    } else {
+      toast.error(res.error ?? "Could not reset password.");
+    }
   };
 
   const roleIcon = (r: Role) =>
@@ -84,6 +120,7 @@ export default function Users() {
           <p className="mt-1 text-sm text-muted-foreground">
             Create accounts and assign them to an office. Office Admins approve forms and manage
             their office; Editors enter data; Viewers have read-only access.
+            {!isReal && <span className="ml-1 text-amber-600">(Demo mode — connect the backend to manage real passwords.)</span>}
           </p>
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
@@ -93,7 +130,10 @@ export default function Users() {
             <div className="space-y-4">
               <div className="space-y-2"><Label>Full name</Label><Input value={fullName} onChange={(e) => setFullName(e.target.value)} /></div>
               <div className="space-y-2"><Label>Email</Label><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></div>
-              <div className="space-y-2"><Label>Temporary password</Label><Input type="text" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Set an initial password" /></div>
+              <div className="space-y-2">
+                <Label>Initial password {isReal ? "" : "(demo: any password works to sign in)"}</Label>
+                <Input type="text" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 8 characters" />
+              </div>
               <div className="space-y-2">
                 <Label>Role</Label>
                 <Select value={role} onValueChange={(v) => setRole(v as Role)}>
@@ -116,7 +156,7 @@ export default function Users() {
                 </div>
               )}
             </div>
-            <DialogFooter><Button onClick={submit}>Create Account</Button></DialogFooter>
+            <DialogFooter><Button onClick={submitCreate} disabled={busy}>{busy ? "Creating…" : "Create Account"}</Button></DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
@@ -148,21 +188,46 @@ export default function Users() {
                   </td>
                   <td className="px-5 py-3 text-muted-foreground">{officeName(u.officeId)}</td>
                   <td className="px-5 py-3">
-                    <Switch checked={u.active} disabled={u.role === "super_admin"} onCheckedChange={(v) => { updateUser(u.id, { active: v }); rerender(); }} />
+                    <Switch checked={u.active} onCheckedChange={(v) => { updateUser(u.id, { active: v }); rerender(); }} />
                   </td>
-                  <td className="px-5 py-3 text-right">
-                    {u.role !== "super_admin" && (
-                      <button onClick={() => { deleteUser(u.id); rerender(); toast.success("User removed."); }} className="inline-flex items-center gap-1 text-sm text-rose-600 hover:underline">
+                  <td className="px-5 py-3">
+                    <div className="flex items-center justify-end gap-3">
+                      <button onClick={() => { setResetFor(u); setNewPw(""); }} className="inline-flex items-center gap-1 text-sm text-primary hover:underline" title="Reset password">
+                        <KeyRound className="h-4 w-4" /> Reset password
+                      </button>
+                      <button onClick={() => remove(u)} className="inline-flex items-center gap-1 text-sm text-rose-600 hover:underline">
                         <Trash2 className="h-4 w-4" /> Remove
                       </button>
-                    )}
+                    </div>
                   </td>
                 </tr>
               ))}
+              {users.length === 0 && (
+                <tr><td colSpan={6} className="px-5 py-10 text-center text-muted-foreground">No accounts yet.</td></tr>
+              )}
             </tbody>
           </table>
         </div>
       </div>
+
+      {/* Reset password dialog */}
+      <Dialog open={!!resetFor} onOpenChange={(o) => { if (!o) setResetFor(null); }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Reset password{resetFor ? ` — ${resetFor.fullName}` : ""}</DialogTitle></DialogHeader>
+          {isReal ? (
+            <div className="space-y-2">
+              <Label>New password</Label>
+              <Input type="text" value={newPw} onChange={(e) => setNewPw(e.target.value)} placeholder="At least 8 characters" />
+              <p className="text-xs text-muted-foreground">Share the new password with the user; they can change it themselves afterwards.</p>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Password management becomes active once the backend (Supabase) is connected.</p>
+          )}
+          <DialogFooter>
+            {isReal && <Button onClick={submitReset} disabled={busy}>{busy ? "Saving…" : "Reset password"}</Button>}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

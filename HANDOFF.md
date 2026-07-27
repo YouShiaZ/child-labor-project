@@ -20,24 +20,31 @@ Language: **English only.** Brand: navy `#1B3A6B` + green `#3AAA35`.
 
 ## 2. Current state — read this first
 
-The project is delivered in **two phases**:
+The app runs in one of **two modes**, chosen automatically by whether the two
+Supabase env vars are set (no code change needed to switch):
 
-| | Phase 1 (this codebase) | Phase 2 (to build) |
+| | DEMO mode (no keys) | REAL mode (keys set) |
 |---|---|---|
 | Data | In-browser `localStorage` (per browser) | Supabase Postgres (shared) |
-| Auth | **Mock** — matches email, any password | Supabase Auth (real passwords) |
+| Auth | Mock — matches email, any password | Supabase Auth (real passwords) |
 | Files (photos/cards/reports) | base64 in `localStorage` | Supabase Storage buckets |
-| Permissions | Enforced in the UI only | Enforced in DB via RLS (already written) |
+| Permissions | UI only | UI **+ database RLS** |
+| Passwords | inactive | self-service change + super-admin reset |
 
-Phase 1 is a **fully working front-end** with the complete UX, data model and
-permission logic. It ships **clean (no sample data)** — only the two offices and
-the staff accounts are seeded. Everything needed for Phase 2 (DB schema + RLS +
-storage policies) is in [`supabase/`](./supabase). **Do not enter real child data
-until Phase 2 auth + DB is wired.**
+**The backend is fully coded** — database schema, row-level security, storage,
+real authentication, password management and secure admin Edge Functions are all
+implemented. Turning it on is **provisioning, not development**: create a Supabase
+project, run one SQL file, deploy 3 functions, set 2 env vars. Full checklist in
+[`supabase/README.md`](./supabase/README.md).
 
-The whole data/business layer is **one file**: `client/src/lib/api.ts`. It is the
-single seam to swap for Supabase — every page imports its data functions from
-there and the function signatures are the API contract.
+The app ships **clean (no sample data)** — only the two offices and the staff
+accounts are seeded. Until the keys are set it stays in demo mode; **do not enter
+real child data until REAL mode is switched on.**
+
+Where things live: the data/business layer is `client/src/lib/api.ts` (in-memory
+cache + write-through), the Supabase calls are in `client/src/lib/db.ts`, the
+client + mode flag in `client/src/lib/supabase.ts`, and auth + passwords in
+`client/src/contexts/AuthContext.tsx`.
 
 ---
 
@@ -286,33 +293,35 @@ vars). Read via `import.meta.env`.
 
 ---
 
-## 13. Phase 2 — wiring Supabase (backend + storage)
+## 13. Turning on the real backend (provisioning only)
 
-Full steps in [`supabase/README.md`](./supabase/README.md). Summary:
-1. Create a Supabase project (free tier is enough to start).
-2. SQL Editor → run `supabase/schema.sql` once (tables + RLS + buckets +
-   seed offices/program).
-3. Auth → Users: create the 8 staff accounts; insert matching `app_users` rows
-   with `role` + `office_id`.
-4. `npm i @supabase/supabase-js`; set the two env vars; rewrite `api.ts` bodies
-   and `AuthContext.login` to Supabase. Upload files to buckets using the path
-   convention `"<office_id>/<filename>"` — the storage RLS keys off the first
-   path segment.
+The integration is already written. Full checklist in
+[`supabase/README.md`](./supabase/README.md). In short: create a Supabase project
+→ run `supabase/schema.sql` → seed the first super admin → deploy the 3 Edge
+Functions (`supabase/functions/`) → set `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY`
+→ redeploy. The app then switches to real mode automatically; the super admin
+creates all other accounts in-app.
+
+**Passwords & accounts:** each user changes their own password from the top-right
+menu (`ChangePasswordDialog`, via `supabase.auth.updateUser`). The super admin
+creates / deletes accounts and resets any password from the Users page — these go
+through the secure Edge Functions, which run with the service-role key server-side
+and verify the caller is a super admin. The anon key in the browser can never
+perform admin actions.
 
 **Storage sizing:** compressed photos ≈ 50–100 KB each; ~1,000 children × a few
 images ≈ **0.5–1 GB**. Word/PDF reports add a little. **5 GB is comfortable.**
 Use **object storage** (Supabase Storage / S3 / Cloudflare R2) — not shared web
-hosting. Supabase Storage free tier = 1 GB; paid ≈ 100 GB. An existing project's
-storage can be reused **only if it's S3-compatible** (S3 / R2 / Spaces / MinIO) —
-create a dedicated bucket for CLP.
+hosting. Supabase Storage free tier = 1 GB; paid ≈ 100 GB. An existing S3-compatible
+store can be reused with a dedicated CLP bucket.
 
 ---
 
 ## 14. Known limitations before going live
 
-1. No backend/DB yet — data is per-browser (Phase 2 fixes).
-2. Mock auth — any password; roles enforced only in UI (Phase 2 = real auth + RLS).
-3. Files are base64 in localStorage (move to Storage; localStorage has a ~5 MB cap).
-4. Progress reports are not locked after approval (spec wants immutability) — add
-   in Phase 2 if required.
-5. Plan DB backups — records are retained 2–3 years.
+1. Real mode requires provisioning (section 13) — until then data is per-browser.
+2. Progress reports are not locked after approval (spec wants immutability) — add
+   a DB rule if required.
+3. Plan Supabase DB backups — records are retained 2–3 years.
+4. The client bundle is a single chunk (~325 KB gzip); fine to ship, can be
+   code-split later if desired.
