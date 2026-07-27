@@ -172,9 +172,15 @@ export default function NewBeneficiary() {
       additionalAid,
       scholarshipReason,
       scholarshipImpact,
-      seasonalCardUrl: cardUrl || undefined,
-      seasonalCardSeason: cardUrl ? getCurrentSeason() : undefined,
-      seasonalCardUpdatedAt: cardUrl ? new Date().toISOString().slice(0, 10) : undefined,
+      seasonalCards: cardUrl
+        ? [{
+            id: `card-${Math.random().toString(36).slice(2, 8)}`,
+            url: cardUrl,
+            season: getCurrentSeason(),
+            year: new Date().getFullYear(),
+            uploadedAt: new Date().toISOString().slice(0, 10),
+          }]
+        : [],
     });
     toast.success(autoApprove ? "Beneficiary created." : "Beneficiary submitted for approval.");
     navigate(`/beneficiaries/${created.id}`);

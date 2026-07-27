@@ -16,7 +16,8 @@ import {
   downloadFile,
   approveBeneficiary,
   seasonalCardLabel,
-  getCurrentSeason,
+  addSeasonalCard,
+  removeSeasonalCard,
 } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { EditTextField, EditSelectField } from "@/components/EditField";
@@ -73,6 +74,7 @@ import {
   CalendarDays,
   CheckCircle2,
   Lock,
+  Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { LeavingReason, ReportType, Beneficiary } from "@/lib/types";
@@ -244,8 +246,8 @@ export default function BeneficiaryDetail() {
             </div>
           </div>
 
-          {/* Seasonal card */}
-          <SeasonalCard beneficiary={b} canEdit={editable} onSave={save} />
+          {/* Seasonal cards gallery */}
+          <SeasonalCards beneficiary={b} canEdit={editable} onChange={rerender} />
 
           {/* Quick info */}
           <div className="rounded-xl border border-border bg-card p-4 card-shadow">
@@ -265,60 +267,93 @@ export default function BeneficiaryDetail() {
   );
 }
 
-// ---------------------------------------------------------------- Seasonal card
-function SeasonalCard({
+// ------------------------------------------------------------- Seasonal cards
+// Full history: every uploaded card stays visible. Upload adds a new card
+// labelled with the current season; old cards are never overwritten.
+function SeasonalCards({
   beneficiary: b,
   canEdit,
-  onSave,
+  onChange,
 }: {
   beneficiary: Beneficiary;
   canEdit: boolean;
-  onSave: (patch: Record<string, unknown>) => void;
+  onChange: () => void;
 }) {
-  const currentLabel = seasonalCardLabel();
-  const storedLabel = b.seasonalCardSeason ? SEASON_LABELS[b.seasonalCardSeason] : currentLabel;
+  const uploadLabel = seasonalCardLabel();
+  const cards = [...(b.seasonalCards ?? [])].sort((a, c) =>
+    a.uploadedAt < c.uploadedAt ? 1 : -1,
+  );
 
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
       const url = await fileToDataUrl(file);
-      onSave({
-        seasonalCardUrl: url,
-        seasonalCardSeason: getCurrentSeason(),
-        seasonalCardUpdatedAt: new Date().toISOString().slice(0, 10),
-      });
-      toast.success("Card uploaded.");
+      addSeasonalCard(b.id, url);
+      onChange();
+      toast.success(`${uploadLabel} uploaded.`);
     } catch {
       toast.error("Could not read that image.");
     }
+    e.target.value = "";
   };
 
   return (
     <div className="rounded-xl border border-border bg-card p-4 card-shadow">
-      <h4 className="mb-3 flex items-center gap-2 font-display text-sm font-semibold text-primary">
-        <Gift className="h-4 w-4" /> {b.seasonalCardUrl ? storedLabel : currentLabel}
-      </h4>
-      <div className="aspect-video w-full overflow-hidden rounded-lg bg-muted">
-        {b.seasonalCardUrl ? (
-          <img src={b.seasonalCardUrl} alt="Card" className="h-full w-full object-contain" />
-        ) : (
-          <div className="grid h-full place-items-center text-muted-foreground"><Gift className="h-10 w-10" /></div>
-        )}
+      <div className="mb-3 flex items-center justify-between">
+        <h4 className="flex items-center gap-2 font-display text-sm font-semibold text-primary">
+          <Gift className="h-4 w-4" /> Thank-you Cards
+        </h4>
+        <span className="text-xs text-muted-foreground">{cards.length}</span>
       </div>
-      <div className="mt-3 flex gap-2">
-        {b.seasonalCardUrl && (
-          <Button variant="outline" className="flex-1 bg-card" onClick={() => downloadFile(b.seasonalCardUrl!, `${b.beneficiaryNumber}-card.jpg`)}>
-            <Download className="mr-2 h-4 w-4" /> Download
-          </Button>
-        )}
-        {canEdit && (
-          <label className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-primary hover:bg-muted/40">
-            <Upload className="h-4 w-4" /> {b.seasonalCardUrl ? "Replace" : "Upload"}
-            <input type="file" accept="image/*" className="hidden" onChange={onFile} />
-          </label>
-        )}
-      </div>
+
+      {cards.length === 0 ? (
+        <div className="grid aspect-video place-items-center rounded-lg bg-muted text-muted-foreground">
+          <Gift className="h-10 w-10" />
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {cards.map((c) => (
+            <div key={c.id} className="overflow-hidden rounded-lg border border-border">
+              <div className="aspect-video w-full overflow-hidden bg-muted">
+                <img src={c.url} alt={`${SEASON_LABELS[c.season]} ${c.year}`} className="h-full w-full object-contain" />
+              </div>
+              <div className="flex items-center justify-between gap-2 px-3 py-2">
+                <span className="text-xs font-medium text-foreground">
+                  {SEASON_LABELS[c.season]} · {c.year}
+                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => downloadFile(c.url, `${b.beneficiaryNumber}-${c.season}-${c.year}.jpg`)}
+                    className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-primary"
+                    title="Download"
+                  >
+                    <Download className="h-4 w-4" />
+                  </button>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      onClick={() => { removeSeasonalCard(b.id, c.id); onChange(); toast.success("Card removed."); }}
+                      className="grid h-7 w-7 place-items-center rounded-md text-rose-600 hover:bg-rose-50"
+                      title="Remove"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {canEdit && (
+        <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-primary hover:bg-muted/40">
+          <Upload className="h-4 w-4" /> Add {uploadLabel}
+          <input type="file" accept="image/*" className="hidden" onChange={onFile} />
+        </label>
+      )}
     </div>
   );
 }

@@ -128,6 +128,7 @@ const baseChild = {
   additionalAid: "",
   scholarshipReason: "",
   scholarshipImpact: "",
+  seasonalCards: [] as Beneficiary["seasonalCards"],
 };
 
 export const beneficiaries: Beneficiary[] = [
@@ -169,6 +170,10 @@ export const beneficiaries: Beneficiary[] = [
       "Mina comes from a vulnerable household in Manshiet Nasser where both parents work in informal garbage collection with unstable income. Without support he is at real risk of dropping out to work.",
     scholarshipImpact:
       "The scholarship keeps Mina in school, reduces the risk of child labor, and secures his academic progression at a critical stage.",
+    seasonalCards: [
+      { id: "card-1", url: "https://images.unsplash.com/photo-1512389142860-9c449e58a543?w=600&h=400&fit=crop", season: "christmas", year: 2024, uploadedAt: "2024-12-20" },
+      { id: "card-2", url: "https://images.unsplash.com/photo-1522184216316-3c25379f9760?w=600&h=400&fit=crop", season: "easter", year: 2025, uploadedAt: "2025-04-18" },
+    ],
     createdAt: "2024-02-10",
   },
   {

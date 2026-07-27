@@ -115,10 +115,9 @@ export interface Beneficiary {
   scholarshipReason: string; // long text
   scholarshipImpact: string; // long text — how the scholarship helps
 
-  // --- Seasonal thank-you card (Christmas / Easter) ---
-  seasonalCardUrl?: string; // uploaded drawing/card image
-  seasonalCardSeason?: SeasonKind; // which season it was uploaded for
-  seasonalCardUpdatedAt?: string;
+  // --- Seasonal thank-you cards (Christmas / Easter) ---
+  // Full history is kept: every uploaded card stays visible.
+  seasonalCards: SeasonalCard[];
 
   createdAt: string;
 }
@@ -127,6 +126,14 @@ export interface Beneficiary {
 // Seasonal card
 // -----------------------------------------------------------------------------
 export type SeasonKind = "christmas" | "easter";
+
+export interface SeasonalCard {
+  id: string;
+  url: string; // image data URL (Phase 1) / storage URL (Phase 2)
+  season: SeasonKind;
+  year: number;
+  uploadedAt: string;
+}
 
 // -----------------------------------------------------------------------------
 // Individual progress report

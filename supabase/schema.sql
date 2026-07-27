@@ -114,15 +114,22 @@ create table if not exists beneficiaries (
   scholarship_reason text,
   scholarship_impact text,
 
-  -- Seasonal card
-  seasonal_card_url        text,
-  seasonal_card_season     season_t,
-  seasonal_card_updated_at date,
-
   created_at timestamptz not null default now()
 );
 create index if not exists idx_beneficiaries_office on beneficiaries(office_id);
 create index if not exists idx_beneficiaries_status on beneficiaries(status);
+
+-- Seasonal thank-you cards — full history kept (many per beneficiary).
+create table if not exists seasonal_cards (
+  id             uuid primary key default gen_random_uuid(),
+  beneficiary_id uuid not null references beneficiaries(id) on delete cascade,
+  season         season_t not null,
+  year           int not null,
+  url            text not null,       -- image path/URL in the 'cards' bucket
+  uploaded_at    date not null default current_date,
+  created_at     timestamptz not null default now()
+);
+create index if not exists idx_cards_beneficiary on seasonal_cards(beneficiary_id);
 
 create table if not exists progress_reports (
   id             uuid primary key default gen_random_uuid(),
@@ -207,6 +214,7 @@ alter table offices          enable row level security;
 alter table app_users        enable row level security;
 alter table projects         enable row level security;
 alter table beneficiaries    enable row level security;
+alter table seasonal_cards   enable row level security;
 alter table progress_reports enable row level security;
 alter table office_reports   enable row level security;
 alter table leaving_records  enable row level security;
@@ -227,6 +235,12 @@ create policy insert_beneficiaries on beneficiaries for insert with check (can_e
 create policy update_beneficiaries on beneficiaries for update
   using (can_edit_office(office_id)) with check (can_edit_office(office_id));
 create policy delete_beneficiaries on beneficiaries for delete using (can_edit_office(office_id));
+
+-- Seasonal cards: read all; write if you can edit the child's office -------
+create policy read_cards  on seasonal_cards for select using (auth.uid() is not null);
+create policy write_cards on seasonal_cards for all
+  using (can_edit_office((select office_id from beneficiaries b where b.id = beneficiary_id)))
+  with check (can_edit_office((select office_id from beneficiaries b where b.id = beneficiary_id)));
 
 -- Progress reports: read all; write if you can edit the child's office ------
 create policy read_reports   on progress_reports for select using (auth.uid() is not null);

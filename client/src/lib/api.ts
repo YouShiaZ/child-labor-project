@@ -26,6 +26,7 @@ import type {
   OfficeReport,
   LeavingRecord,
   SeasonKind,
+  SeasonalCard,
 } from "./types";
 
 export { PROJECT_ID, OFFICE_CAIRO, OFFICE_MINYA };
@@ -33,7 +34,7 @@ export { PROJECT_ID, OFFICE_CAIRO, OFFICE_MINYA };
 // -----------------------------------------------------------------------------
 // Persistence
 // -----------------------------------------------------------------------------
-const STORE_KEY = "clp_store_v3"; // bump when the seed shape changes
+const STORE_KEY = "clp_store_v4"; // bump when the seed shape changes
 
 interface Store {
   offices: Office[];
@@ -215,6 +216,31 @@ export const approveBeneficiary = (id: string, approverUserId: string) => {
     approvedAt: today(),
   });
 };
+
+/** Add a seasonal card to a beneficiary (keeps all previous cards). */
+export function addSeasonalCard(beneficiaryId: string, url: string, season?: SeasonKind) {
+  const b = getBeneficiary(beneficiaryId);
+  if (!b) return;
+  const card: SeasonalCard = {
+    id: uid("card"),
+    url,
+    season: season ?? getCurrentSeason(),
+    year: new Date().getFullYear(),
+    uploadedAt: today(),
+  };
+  return updateBeneficiary(beneficiaryId, {
+    seasonalCards: [...(b.seasonalCards ?? []), card],
+  });
+}
+
+/** Remove one seasonal card by id. */
+export function removeSeasonalCard(beneficiaryId: string, cardId: string) {
+  const b = getBeneficiary(beneficiaryId);
+  if (!b) return;
+  return updateBeneficiary(beneficiaryId, {
+    seasonalCards: (b.seasonalCards ?? []).filter((c) => c.id !== cardId),
+  });
+}
 
 // -----------------------------------------------------------------------------
 // Progress reports
