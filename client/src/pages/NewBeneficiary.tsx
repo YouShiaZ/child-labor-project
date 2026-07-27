@@ -13,6 +13,7 @@ import {
 } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { SectionCard } from "@/components/ui-bits";
+import ImageCropper from "@/components/ImageCropper";
 import MultiSelect from "@/components/MultiSelect";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -208,7 +209,7 @@ export default function NewBeneficiary() {
               </Pair>
               <Pair>
                 <div className="space-y-2"><Label>Date of birth *</Label><Input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} /></div>
-                <div className="space-y-2"><Label>Age (auto)</Label><Input value={age !== null ? `${age} years` : ""} disabled placeholder="—" /></div>
+                <div className="space-y-2"><Label>Age</Label><Input value={age !== null ? `${age} years` : ""} disabled placeholder="—" /></div>
               </Pair>
               <Pair>
                 <div className="space-y-2">
@@ -237,10 +238,15 @@ export default function NewBeneficiary() {
                   <div className="flex flex-col items-center gap-2 text-muted-foreground"><Upload className="h-7 w-7" /><span className="text-xs">No photo</span></div>
                 )}
               </div>
-              <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-primary hover:bg-muted/40">
-                <Upload className="h-4 w-4" /> Upload photo
-                <input type="file" accept="image/*" className="hidden" onChange={(e) => onPhoto(e, setPhotoUrl)} />
-              </label>
+              <ImageCropper
+                title="Adjust child's photo"
+                onCropped={(url) => setPhotoUrl(url)}
+                trigger={
+                  <button type="button" className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-primary hover:bg-muted/40">
+                    <Upload className="h-4 w-4" /> {photoUrl ? "Change photo" : "Upload photo"}
+                  </button>
+                }
+              />
             </div>
           </div>
         </SectionCard>

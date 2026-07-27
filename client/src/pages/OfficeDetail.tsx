@@ -378,8 +378,10 @@ function ReportsTab({
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="font-display text-base font-semibold text-primary">Annual Reports</h3>
-          <p className="text-sm text-muted-foreground">Yearly office reports (Word / PDF). Viewers can download.</p>
+          <h3 className="font-display text-base font-semibold text-primary">Comprehensive Annual Reports</h3>
+          <p className="text-sm text-muted-foreground">
+            Office-wide yearly report covering all beneficiaries (Word / PDF). Everyone can download.
+          </p>
         </div>
         {editable && (
           <Dialog open={open} onOpenChange={setOpen}>
@@ -387,11 +389,11 @@ function ReportsTab({
               <Button><Upload className="mr-1.5 h-4 w-4" /> Upload Report</Button>
             </DialogTrigger>
             <DialogContent>
-              <DialogHeader><DialogTitle>Upload Annual Report</DialogTitle></DialogHeader>
+              <DialogHeader><DialogTitle>Upload Comprehensive Annual Report</DialogTitle></DialogHeader>
               <div className="space-y-4">
                 <div className="space-y-2">
                   <Label>Title</Label>
-                  <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Annual Report 2025" />
+                  <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Cairo Office — Annual Report 2025" />
                 </div>
                 <div className="space-y-2">
                   <Label>Year</Label>

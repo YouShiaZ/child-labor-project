@@ -21,6 +21,7 @@ import {
 } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { EditTextField, EditSelectField } from "@/components/EditField";
+import ImageCropper from "@/components/ImageCropper";
 import { SectionCard, StatusPill, HealthPill, ApprovalPill, OfficePill } from "@/components/ui-bits";
 import {
   GENDER_LABELS,
@@ -75,6 +76,7 @@ import {
   CheckCircle2,
   Lock,
   Trash2,
+  Image as ImageIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { LeavingReason, ReportType, Beneficiary } from "@/lib/types";
@@ -173,7 +175,7 @@ export default function BeneficiaryDetail() {
                 <EditTextField canEdit={editable} label="First Name" value={b.firstName} onSave={(v) => save({ firstName: v })} />
                 <EditTextField canEdit={editable} label="Last Name" value={b.lastName} onSave={(v) => save({ lastName: v })} />
                 <EditTextField canEdit={editable} label="Date of Birth" type="date" value={b.dateOfBirth} onSave={(v) => save({ dateOfBirth: v })} />
-                <EditTextField canEdit={false} label="Age (auto)" value={String(age ?? "")} display={`${age} years`} onSave={() => {}} />
+                <EditTextField canEdit={false} label="Age" value={String(age ?? "")} display={`${age} years`} onSave={() => {}} />
                 <EditSelectField canEdit={editable} label="Gender" value={b.gender} display={GENDER_LABELS[b.gender]} options={[{ value: "male", label: "Male" }, { value: "female", label: "Female" }]} onSave={(v) => save({ gender: v })} />
                 <EditTextField canEdit={editable} label="Language" value={b.language} onSave={(v) => save({ language: v })} />
                 <EditTextField canEdit={editable} label="Village / Community" value={b.village} onSave={(v) => save({ village: v })} />
@@ -236,15 +238,29 @@ export default function BeneficiaryDetail() {
                 <div className="grid h-full place-items-center text-muted-foreground"><UserIcon className="h-12 w-12" /></div>
               )}
             </div>
+            <div className="mt-1 text-center text-[11px] text-muted-foreground">Entry photo (stays fixed)</div>
             <div className="mt-3 flex gap-2">
               {b.photoUrl && (
                 <Button variant="outline" className="flex-1 bg-card" onClick={() => downloadFile(b.photoUrl!, `${b.beneficiaryNumber}-photo.jpg`)}>
                   <Download className="mr-2 h-4 w-4" /> Download
                 </Button>
               )}
-              {editable && <PhotoDialog onSave={(url) => save({ photoUrl: url })} />}
+              {editable && (
+                <ImageCropper
+                  title="Adjust photo"
+                  onCropped={(url) => save({ photoUrl: url })}
+                  trigger={
+                    <Button variant="outline" className="flex-1 bg-card">
+                      <Upload className="mr-2 h-4 w-4" /> Update
+                    </Button>
+                  }
+                />
+              )}
             </div>
           </div>
+
+          {/* Progress photos over time (entry photo + one per report) */}
+          <ProgressPhotos beneficiary={b} reports={reports} />
 
           {/* Seasonal cards gallery */}
           <SeasonalCards beneficiary={b} canEdit={editable} onChange={rerender} />
@@ -358,33 +374,45 @@ function SeasonalCards({
   );
 }
 
-function PhotoDialog({ onSave }: { onSave: (url: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      onSave(await fileToDataUrl(file));
-      setOpen(false);
-      toast.success("Photo updated.");
-    } catch {
-      toast.error("Could not read that image.");
-    }
-  };
+// Photo timeline: the fixed entry photo plus each progress report's photo.
+function ProgressPhotos({
+  beneficiary: b,
+  reports,
+}: {
+  beneficiary: Beneficiary;
+  reports: ReturnType<typeof listReports>;
+}) {
+  const items: { url: string; label: string; date: string }[] = [];
+  if (b.photoUrl) items.push({ url: b.photoUrl, label: "Entry", date: b.createdAt });
+  reports
+    .filter((r) => r.updatePhotoUrl)
+    .forEach((r) =>
+      items.push({
+        url: r.updatePhotoUrl!,
+        label: `${REPORT_TYPE_LABELS[r.reportType]} ${r.period}`,
+        date: r.date,
+      }),
+    );
+
+  if (items.length <= 1) return null; // nothing added beyond the entry photo yet
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline" className="flex-1 bg-card"><Upload className="mr-2 h-4 w-4" /> Update</Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader><DialogTitle>Update Photo</DialogTitle></DialogHeader>
-        <label className="flex cursor-pointer flex-col items-center gap-3 rounded-xl border-2 border-dashed border-border bg-muted/40 py-10 text-muted-foreground hover:border-primary/40">
-          <Upload className="h-8 w-8" />
-          <span className="text-sm">Click to choose an image</span>
-          <input type="file" accept="image/*" className="hidden" onChange={onFile} />
-        </label>
-      </DialogContent>
-    </Dialog>
+    <div className="rounded-xl border border-border bg-card p-4 card-shadow">
+      <h4 className="mb-3 flex items-center gap-2 font-display text-sm font-semibold text-primary">
+        <ImageIcon className="h-4 w-4" /> Photos over time
+      </h4>
+      <div className="flex gap-3 overflow-x-auto pb-1">
+        {items.map((it, i) => (
+          <div key={i} className="w-24 shrink-0">
+            <div className="aspect-square w-full overflow-hidden rounded-lg border border-border bg-muted">
+              <img src={it.url} alt={it.label} className="h-full w-full object-cover" />
+            </div>
+            <div className="mt-1 truncate text-center text-[11px] font-medium text-foreground">{it.label}</div>
+            <div className="truncate text-center text-[10px] text-muted-foreground">{it.date}</div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
