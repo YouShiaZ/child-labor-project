@@ -1,4 +1,5 @@
-// Child Labor Project — Login page. Mock auth (see AuthContext). Navy/green brand split layout.
+// Child Labor Project — Login page. Mock auth in Phase 1 (see AuthContext);
+// swap for Supabase Auth in Phase 2. Navy/green brand split layout.
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
@@ -26,11 +27,6 @@ export default function Login() {
     const res = login(email, password);
     if (res.ok) navigate("/dashboard");
     else setError(res.error ?? "Login failed.");
-  };
-
-  const quick = (em: string) => {
-    setEmail(em);
-    setPassword("demo");
   };
 
   return (
@@ -114,21 +110,6 @@ export default function Login() {
               Sign in
             </Button>
           </form>
-
-          <div className="mt-8 rounded-lg border border-dashed border-border bg-muted/40 p-4 text-xs">
-            <p className="mb-2 font-medium text-foreground">Demo accounts (any password):</p>
-            <div className="grid gap-1.5">
-              <button onClick={() => quick("admin.cairo@clp.org")} className="text-left text-muted-foreground hover:text-primary">
-                admin.cairo@clp.org — <span className="font-medium">Cairo Admin</span>
-              </button>
-              <button onClick={() => quick("editor1.minya@clp.org")} className="text-left text-muted-foreground hover:text-primary">
-                editor1.minya@clp.org — <span className="font-medium">Minya Editor</span>
-              </button>
-              <button onClick={() => quick("viewer@clp.org")} className="text-left text-muted-foreground hover:text-primary">
-                viewer@clp.org — <span className="font-medium">Viewer</span>
-              </button>
-            </div>
-          </div>
         </div>
       </div>
     </div>

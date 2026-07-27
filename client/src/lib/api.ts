@@ -34,7 +34,7 @@ export { PROJECT_ID, OFFICE_CAIRO, OFFICE_MINYA };
 // -----------------------------------------------------------------------------
 // Persistence
 // -----------------------------------------------------------------------------
-const STORE_KEY = "clp_store_v4"; // bump when the seed shape changes
+const STORE_KEY = "clp_store_v5"; // bump when the seed shape changes (v5 = clean, no sample data)
 
 interface Store {
   offices: Office[];
