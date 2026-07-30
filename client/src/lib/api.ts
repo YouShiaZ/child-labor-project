@@ -116,9 +116,12 @@ export async function bootstrap(): Promise<void> {
 // Fire-and-forget write to Supabase with a visible error if it fails.
 function push(action: () => Promise<unknown>) {
   if (!SUPABASE_ENABLED) return;
-  action().catch((e) => {
+  action().catch((e: unknown) => {
+    // Surface the real reason so problems can be diagnosed quickly.
     console.error("[CLP] Supabase write failed:", e);
-    toast.error("Could not save to the server. Please retry.");
+    const err = e as { message?: string; details?: string; hint?: string; code?: string };
+    const reason = [err?.message, err?.details, err?.hint].filter(Boolean).join(" — ");
+    toast.error(`Could not save: ${reason || "unknown error"}${err?.code ? ` (${err.code})` : ""}`);
   });
 }
 
@@ -127,6 +130,44 @@ const uid = () =>
     "id-" + Math.random().toString(36).slice(2) + Date.now().toString(36));
 const today = () => new Date().toISOString().slice(0, 10);
 const now = () => new Date().toISOString();
+
+// -----------------------------------------------------------------------------
+// Audit trail — record who did what
+// -----------------------------------------------------------------------------
+let currentActor: { id: string; name: string; officeId: string | null } | null = null;
+
+/** Called by AuthContext whenever the signed-in user changes. */
+export function setCurrentActor(u: User | null) {
+  currentActor = u ? { id: u.id, name: u.fullName, officeId: u.officeId } : null;
+}
+
+/** Write an audit-log entry (real mode only). */
+export function logActivity(action: string, entity: string, entityId: string | null, summary: string) {
+  if (!SUPABASE_ENABLED || !currentActor) return;
+  const actor = currentActor;
+  push(() =>
+    db.dbLogActivity({
+      actorId: actor.id, actorName: actor.name, officeId: actor.officeId,
+      action, entity, entityId, summary,
+    }),
+  );
+}
+
+/** Fetch the recent activity feed (real mode). Returns [] in demo mode. */
+export async function fetchRecentActivity(limit = 60) {
+  if (!SUPABASE_ENABLED) return [];
+  try {
+    return await db.dbFetchRecentActivity(limit);
+  } catch (e) {
+    console.error("[CLP] Could not load activity:", e);
+    return [];
+  }
+}
+
+const beneName = (id: string) => {
+  const b = getBeneficiary(id);
+  return b ? `${b.firstName} ${b.lastName} (${b.beneficiaryNumber})` : id;
+};
 
 // -----------------------------------------------------------------------------
 // Permission helpers (mirror the DB RLS rules)
@@ -222,6 +263,7 @@ export const createBeneficiary = (b: Omit<Beneficiary, "id" | "createdAt">) => {
   store.beneficiaries = [...store.beneficiaries, ben];
   persist();
   push(() => db.dbInsertBeneficiary(ben));
+  logActivity("create", "beneficiary", ben.id, `Added beneficiary ${ben.firstName} ${ben.lastName} (${ben.beneficiaryNumber})`);
   return ben;
 };
 
@@ -230,12 +272,21 @@ export const updateBeneficiary = (id: string, patch: Partial<Beneficiary>) => {
   persist();
   // seasonalCards changes are pushed via addSeasonalCard/removeSeasonalCard.
   const { seasonalCards, ...rest } = patch as Record<string, unknown>;
-  if (Object.keys(rest).length) push(() => db.dbUpdateBeneficiary(id, rest));
+  if (Object.keys(rest).length) {
+    push(() => db.dbUpdateBeneficiary(id, rest));
+    // Skip the noisy approval update here; approveBeneficiary logs its own entry.
+    if (!("approvalStatus" in rest && Object.keys(rest).length <= 3)) {
+      logActivity("update", "beneficiary", id, `Updated ${beneName(id)}`);
+    }
+  }
   return store.beneficiaries.find((b) => b.id === id)!;
 };
 
-export const approveBeneficiary = (id: string, approverUserId: string) =>
-  updateBeneficiary(id, { approvalStatus: "approved", approvedByUserId: approverUserId, approvedAt: today() });
+export const approveBeneficiary = (id: string, approverUserId: string) => {
+  const r = updateBeneficiary(id, { approvalStatus: "approved", approvedByUserId: approverUserId, approvedAt: today() });
+  logActivity("approve", "beneficiary", id, `Approved ${beneName(id)}`);
+  return r;
+};
 
 export function addSeasonalCard(beneficiaryId: string, url: string, season?: SeasonKind) {
   const b = getBeneficiary(beneficiaryId);
@@ -248,6 +299,7 @@ export function addSeasonalCard(beneficiaryId: string, url: string, season?: Sea
   );
   persist();
   push(() => db.dbInsertCard(beneficiaryId, card));
+  logActivity("create", "card", beneficiaryId, `Added ${card.season} card (${card.year}) for ${beneName(beneficiaryId)}`);
 }
 
 export function removeSeasonalCard(beneficiaryId: string, cardId: string) {
@@ -256,6 +308,7 @@ export function removeSeasonalCard(beneficiaryId: string, cardId: string) {
   );
   persist();
   push(() => db.dbDeleteCard(cardId));
+  logActivity("delete", "card", beneficiaryId, `Removed a card from ${beneName(beneficiaryId)}`);
 }
 
 // -----------------------------------------------------------------------------
@@ -271,6 +324,7 @@ export const createReport = (r: Omit<ProgressReport, "id">) => {
   store.reports = [...store.reports, rep];
   persist();
   push(() => db.dbInsertReport(rep));
+  logActivity("create", "report", rep.beneficiaryId, `Added ${rep.reportType} report (${rep.period}) for ${beneName(rep.beneficiaryId)}`);
   return rep;
 };
 
@@ -287,13 +341,16 @@ export const createOfficeReport = (r: Omit<OfficeReport, "id" | "uploadedAt">) =
   store.officeReports = [...store.officeReports, rep];
   persist();
   push(() => db.dbInsertOfficeReport(rep));
+  logActivity("create", "office_report", rep.officeId, `Uploaded annual report "${rep.title}" (${rep.year})`);
   return rep;
 };
 
 export const deleteOfficeReport = (id: string) => {
+  const rep = store.officeReports.find((r) => r.id === id);
   store.officeReports = store.officeReports.filter((r) => r.id !== id);
   persist();
   push(() => db.dbDeleteOfficeReport(id));
+  if (rep) logActivity("delete", "office_report", rep.officeId, `Deleted annual report "${rep.title}"`);
 };
 
 // -----------------------------------------------------------------------------
@@ -306,6 +363,7 @@ export const startLeaving = (l: Omit<LeavingRecord, "id">) => {
   store.leaving = [...store.leaving, rec];
   persist();
   push(() => db.dbInsertLeaving(rec));
+  logActivity("leave", "beneficiary", l.beneficiaryId, `Started leaving (${l.reason}) for ${beneName(l.beneficiaryId)}`);
   updateBeneficiary(l.beneficiaryId, { status: "leaving" }); // persists + pushes
   return rec;
 };

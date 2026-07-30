@@ -170,6 +170,21 @@ create table if not exists leaving_records (
   created_at     timestamptz not null default now()
 );
 
+-- Audit trail: who did what (create / update / approve / delete / leave).
+create table if not exists activity_log (
+  id         uuid primary key default gen_random_uuid(),
+  actor_id   uuid references app_users(id) on delete set null,
+  actor_name text not null,
+  office_id  text references offices(id),
+  action     text not null,
+  entity     text not null,
+  entity_id  text,
+  summary    text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_activity_created on activity_log(created_at desc);
+create index if not exists idx_activity_office  on activity_log(office_id);
+
 -- ============================================================================
 -- Helper functions (used by RLS) — SECURITY DEFINER to read app_users safely
 -- ============================================================================
@@ -218,6 +233,7 @@ alter table seasonal_cards   enable row level security;
 alter table progress_reports enable row level security;
 alter table office_reports   enable row level security;
 alter table leaving_records  enable row level security;
+alter table activity_log     enable row level security;
 
 -- Everyone signed in can READ reference data ---------------------------------
 create policy read_offices  on offices          for select using (auth.uid() is not null);
@@ -258,6 +274,10 @@ create policy read_leaving  on leaving_records for select using (auth.uid() is n
 create policy write_leaving on leaving_records for all
   using (can_edit_office((select office_id from beneficiaries b where b.id = beneficiary_id)))
   with check (can_edit_office((select office_id from beneficiaries b where b.id = beneficiary_id)));
+
+-- Activity log: everyone signed in can read; a user writes only as themselves.
+create policy read_activity   on activity_log for select using (auth.uid() is not null);
+create policy insert_activity on activity_log for insert with check (actor_id = auth.uid());
 
 -- ============================================================================
 -- Storage buckets  (photos + cards are public-read; reports are private)

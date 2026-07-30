@@ -23,6 +23,7 @@ import {
   canApprove as _canApprove,
   canManageUsers as _canManageUsers,
   isSuperAdmin as _isSuperAdmin,
+  setCurrentActor,
   SUPABASE_ENABLED,
 } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
@@ -63,6 +64,11 @@ const STORAGE_KEY = "clp_auth_user";
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [ready, setReady] = useState(false);
+
+  // Keep the audit-log actor in sync with the signed-in user.
+  useEffect(() => {
+    setCurrentActor(user);
+  }, [user]);
 
   // --- Initialization -------------------------------------------------------
   useEffect(() => {

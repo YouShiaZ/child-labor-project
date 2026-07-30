@@ -292,6 +292,57 @@ export async function dbUpdateUserProfile(id: string, patch: Partial<User>) {
 }
 
 // -----------------------------------------------------------------------------
+// Activity log (audit trail: who did what)
+// -----------------------------------------------------------------------------
+export interface ActivityRow {
+  id: string;
+  actorId: string | null;
+  actorName: string;
+  officeId: string | null;
+  action: string;
+  entity: string;
+  entityId: string | null;
+  summary: string;
+  createdAt: string;
+}
+
+export async function dbLogActivity(e: {
+  actorId: string | null;
+  actorName: string;
+  officeId: string | null;
+  action: string;
+  entity: string;
+  entityId: string | null;
+  summary: string;
+}) {
+  const sb = client();
+  const { error } = await sb.from("activity_log").insert({
+    actor_id: e.actorId,
+    actor_name: e.actorName,
+    office_id: e.officeId,
+    action: e.action,
+    entity: e.entity,
+    entity_id: e.entityId,
+    summary: e.summary,
+  });
+  if (error) throw error;
+}
+
+export async function dbFetchRecentActivity(limit = 60): Promise<ActivityRow[]> {
+  const sb = client();
+  const { data, error } = await sb
+    .from("activity_log")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []).map((r: any) => ({
+    id: r.id, actorId: r.actor_id, actorName: r.actor_name, officeId: r.office_id,
+    action: r.action, entity: r.entity, entityId: r.entity_id, summary: r.summary, createdAt: r.created_at,
+  }));
+}
+
+// -----------------------------------------------------------------------------
 // Storage
 // -----------------------------------------------------------------------------
 function dataUrlToBlob(dataUrl: string): Blob {

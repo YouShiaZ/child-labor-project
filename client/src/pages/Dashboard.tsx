@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { listBeneficiaries, listOffices, listAllReports, computeAge } from "@/lib/api";
 import { StatusPill, ApprovalPill, OfficePill } from "@/components/ui-bits";
+import ActivityFeed from "@/components/ActivityFeed";
 import { Users2, Building2, HeartHandshake, Clock, ArrowRight } from "lucide-react";
 
 function Stat({ icon, label, value, tint }: { icon: React.ReactNode; label: string; value: number; tint: string }) {
@@ -116,6 +117,9 @@ export default function Dashboard() {
           </table>
         </div>
       </div>
+
+      {/* Audit trail — managers only */}
+      {(user?.role === "super_admin" || user?.role === "office_admin") && <ActivityFeed />}
     </div>
   );
 }
