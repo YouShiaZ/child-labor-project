@@ -14,6 +14,7 @@ import Beneficiaries from "./pages/Beneficiaries";
 import NewBeneficiary from "./pages/NewBeneficiary";
 import BeneficiaryDetail from "./pages/BeneficiaryDetail";
 import Analytics from "./pages/Analytics";
+import Approvals from "./pages/Approvals";
 import Users from "./pages/Users";
 
 const EDITORS = ["super_admin", "office_admin", "editor"] as const;
@@ -47,6 +48,10 @@ function Router() {
 
       <Route path="/analytics">
         <RequireAuth><Analytics /></RequireAuth>
+      </Route>
+
+      <Route path="/approvals">
+        <RequireAuth roles={["super_admin", "office_admin"]}><Approvals /></RequireAuth>
       </Route>
 
       <Route path="/users">

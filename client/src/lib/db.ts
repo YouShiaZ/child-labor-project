@@ -13,6 +13,7 @@ import type {
   ProgressReport,
   OfficeReport,
   LeavingRecord,
+  ChangeRequest,
   OfficeId,
 } from "./types";
 
@@ -144,6 +145,14 @@ const toLeaving = (r: any): LeavingRecord => ({
   explanation: r.explanation ?? undefined, date: r.date, authorUserId: r.author_id ?? "",
 });
 
+const toChangeRequest = (r: any): ChangeRequest => ({
+  id: r.id, officeId: r.office_id, beneficiaryId: r.beneficiary_id, kind: r.kind,
+  payload: r.payload ?? {}, summary: r.summary, status: r.status,
+  requestedByUserId: r.requested_by ?? "", requestedByName: r.requested_by_name ?? "",
+  createdAt: r.created_at, reviewedByUserId: r.reviewed_by ?? undefined,
+  reviewedAt: r.reviewed_at ?? undefined,
+});
+
 // -----------------------------------------------------------------------------
 // Snapshot (loaded once on startup, kept in memory by api.ts)
 // -----------------------------------------------------------------------------
@@ -155,11 +164,12 @@ export interface DbSnapshot {
   reports: ProgressReport[];
   officeReports: OfficeReport[];
   leaving: LeavingRecord[];
+  changeRequests: ChangeRequest[];
 }
 
 export async function dbFetchAll(): Promise<DbSnapshot> {
   const sb = client();
-  const [offices, users, projects, benes, cards, reports, officeReports, leaving] =
+  const [offices, users, projects, benes, cards, reports, officeReports, leaving, changes] =
     await Promise.all([
       sb.from("offices").select("*"),
       sb.from("app_users").select("*"),
@@ -169,8 +179,9 @@ export async function dbFetchAll(): Promise<DbSnapshot> {
       sb.from("progress_reports").select("*"),
       sb.from("office_reports").select("*"),
       sb.from("leaving_records").select("*"),
+      sb.from("change_requests").select("*"),
     ]);
-  for (const r of [offices, users, projects, benes, cards, reports, officeReports, leaving]) {
+  for (const r of [offices, users, projects, benes, cards, reports, officeReports, leaving, changes]) {
     if (r.error) throw r.error;
   }
   const cardsByBene = new Map<string, SeasonalCard[]>();
@@ -187,6 +198,7 @@ export async function dbFetchAll(): Promise<DbSnapshot> {
     reports: (reports.data ?? []).map(toReport),
     officeReports: (officeReports.data ?? []).map(toOfficeReport),
     leaving: (leaving.data ?? []).map(toLeaving),
+    changeRequests: (changes.data ?? []).map(toChangeRequest),
   };
 }
 
@@ -264,6 +276,24 @@ export async function dbInsertLeaving(l: LeavingRecord) {
     id: l.id, beneficiary_id: l.beneficiaryId, reason: l.reason,
     explanation: l.explanation ?? null, date: l.date, author_id: l.authorUserId,
   });
+  if (error) throw error;
+}
+
+export async function dbInsertChangeRequest(cr: ChangeRequest) {
+  const sb = client();
+  const { error } = await sb.from("change_requests").insert({
+    id: cr.id, office_id: cr.officeId, beneficiary_id: cr.beneficiaryId, kind: cr.kind,
+    payload: cr.payload, summary: cr.summary, status: cr.status,
+    requested_by: cr.requestedByUserId, requested_by_name: cr.requestedByName, created_at: cr.createdAt,
+  });
+  if (error) throw error;
+}
+
+export async function dbUpdateChangeRequestStatus(id: string, status: string, reviewerId: string) {
+  const sb = client();
+  const { error } = await sb.from("change_requests").update({
+    status, reviewed_by: reviewerId, reviewed_at: new Date().toISOString(),
+  }).eq("id", id);
   if (error) throw error;
 }
 

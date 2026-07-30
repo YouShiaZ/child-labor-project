@@ -21,6 +21,7 @@ import {
 } from "./mockData";
 import type {
   User,
+  Role,
   Office,
   OfficeId,
   Project,
@@ -28,6 +29,8 @@ import type {
   ProgressReport,
   OfficeReport,
   LeavingRecord,
+  ChangeRequest,
+  ChangeKind,
   SeasonKind,
   SeasonalCard,
 } from "./types";
@@ -50,6 +53,7 @@ interface Store {
   reports: ProgressReport[];
   officeReports: OfficeReport[];
   leaving: LeavingRecord[];
+  changeRequests: ChangeRequest[];
 }
 
 function clone<T>(v: T): T {
@@ -64,6 +68,7 @@ const seed = (): Store => ({
   reports: clone(seedReports),
   officeReports: clone(seedOfficeReports),
   leaving: clone(seedLeaving),
+  changeRequests: [],
 });
 
 function loadDemo(): Store {
@@ -110,6 +115,7 @@ export async function bootstrap(): Promise<void> {
     reports: snap.reports,
     officeReports: snap.officeReports,
     leaving: snap.leaving,
+    changeRequests: snap.changeRequests,
   };
 }
 
@@ -134,11 +140,18 @@ const now = () => new Date().toISOString();
 // -----------------------------------------------------------------------------
 // Audit trail — record who did what
 // -----------------------------------------------------------------------------
-let currentActor: { id: string; name: string; officeId: string | null } | null = null;
+let currentActor: { id: string; name: string; officeId: string | null; role: Role } | null = null;
 
 /** Called by AuthContext whenever the signed-in user changes. */
 export function setCurrentActor(u: User | null) {
-  currentActor = u ? { id: u.id, name: u.fullName, officeId: u.officeId } : null;
+  currentActor = u ? { id: u.id, name: u.fullName, officeId: u.officeId, role: u.role } : null;
+}
+
+/** Is the current user an admin (super, or office admin of this office)? */
+function actorIsAdminFor(officeId: OfficeId): boolean {
+  if (!currentActor) return false;
+  if (currentActor.role === "super_admin") return true;
+  return currentActor.role === "office_admin" && currentActor.officeId === officeId;
 }
 
 /** Write an audit-log entry (real mode only). */
@@ -367,6 +380,149 @@ export const startLeaving = (l: Omit<LeavingRecord, "id">) => {
   updateBeneficiary(l.beneficiaryId, { status: "leaving" }); // persists + pushes
   return rec;
 };
+
+// -----------------------------------------------------------------------------
+// Approval queue — every editor action needs an office-admin approval
+// -----------------------------------------------------------------------------
+export const listChangeRequests = (officeId?: OfficeId) =>
+  (officeId ? store.changeRequests.filter((c) => c.officeId === officeId) : [...store.changeRequests])
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+
+export const listPendingChangeRequests = (officeId?: OfficeId) =>
+  listChangeRequests(officeId).filter((c) => c.status === "pending");
+
+function createChangeRequest(input: {
+  officeId: OfficeId; beneficiaryId: string; kind: ChangeKind;
+  payload: Record<string, unknown>; summary: string;
+}): ChangeRequest {
+  const cr: ChangeRequest = {
+    ...input,
+    id: uid(),
+    status: "pending",
+    requestedByUserId: currentActor?.id ?? "",
+    requestedByName: currentActor?.name ?? "",
+    createdAt: now(),
+  };
+  store.changeRequests = [...store.changeRequests, cr];
+  persist();
+  push(() => db.dbInsertChangeRequest(cr));
+  logActivity("request", cr.kind, cr.beneficiaryId, `Requested approval: ${cr.summary}`);
+  return cr;
+}
+
+function applyChangeRequest(cr: ChangeRequest) {
+  switch (cr.kind) {
+    case "update":
+      updateBeneficiary(cr.beneficiaryId, cr.payload as Partial<Beneficiary>);
+      break;
+    case "leave":
+      startLeaving(cr.payload as unknown as Omit<LeavingRecord, "id">);
+      break;
+    case "report":
+      createReport(cr.payload as unknown as Omit<ProgressReport, "id">);
+      break;
+    case "card_add":
+      addSeasonalCard(cr.beneficiaryId, cr.payload.url as string, cr.payload.season as SeasonKind);
+      break;
+    case "card_remove":
+      removeSeasonalCard(cr.beneficiaryId, cr.payload.cardId as string);
+      break;
+  }
+}
+
+export function approveChangeRequest(id: string, reviewerId: string) {
+  const cr = store.changeRequests.find((c) => c.id === id);
+  if (!cr || cr.status !== "pending") return;
+  applyChangeRequest(cr); // performs the real change (reviewer has the rights)
+  store.changeRequests = store.changeRequests.map((c) =>
+    c.id === id ? { ...c, status: "approved", reviewedByUserId: reviewerId, reviewedAt: now() } : c,
+  );
+  persist();
+  push(() => db.dbUpdateChangeRequestStatus(id, "approved", reviewerId));
+  logActivity("approve", "request", cr.beneficiaryId, `Approved request: ${cr.summary}`);
+}
+
+export function rejectChangeRequest(id: string, reviewerId: string) {
+  const cr = store.changeRequests.find((c) => c.id === id);
+  if (!cr || cr.status !== "pending") return;
+  store.changeRequests = store.changeRequests.map((c) =>
+    c.id === id ? { ...c, status: "rejected", reviewedByUserId: reviewerId, reviewedAt: now() } : c,
+  );
+  persist();
+  push(() => db.dbUpdateChangeRequestStatus(id, "rejected", reviewerId));
+  logActivity("delete", "request", cr.beneficiaryId, `Rejected request: ${cr.summary}`);
+}
+
+// --- Wrappers the UI calls. Return { queued:true } when it needs admin approval.
+type SubmitResult = { queued: boolean };
+
+/** Edit a beneficiary. Applies now for admins or while the record is still pending; otherwise queues. */
+export function submitBeneficiaryEdit(id: string, patch: Partial<Beneficiary>): SubmitResult {
+  const b = getBeneficiary(id);
+  if (!b) return { queued: false };
+  if (actorIsAdminFor(b.officeId) || b.approvalStatus === "pending") {
+    updateBeneficiary(id, patch);
+    return { queued: false };
+  }
+  const fields = Object.keys(patch).join(", ");
+  createChangeRequest({
+    officeId: b.officeId, beneficiaryId: id, kind: "update", payload: patch as Record<string, unknown>,
+    summary: `Edit ${beneName(id)} — ${fields}`,
+  });
+  return { queued: true };
+}
+
+export function submitLeaving(l: Omit<LeavingRecord, "id">): SubmitResult {
+  const office = getBeneficiary(l.beneficiaryId)?.officeId ?? "";
+  if (actorIsAdminFor(office)) {
+    startLeaving(l);
+    return { queued: false };
+  }
+  createChangeRequest({
+    officeId: office, beneficiaryId: l.beneficiaryId, kind: "leave", payload: l as unknown as Record<string, unknown>,
+    summary: `Leaving (${l.reason}) — ${beneName(l.beneficiaryId)}`,
+  });
+  return { queued: true };
+}
+
+export function submitReport(r: Omit<ProgressReport, "id">): SubmitResult {
+  const office = getBeneficiary(r.beneficiaryId)?.officeId ?? "";
+  if (actorIsAdminFor(office)) {
+    createReport(r);
+    return { queued: false };
+  }
+  createChangeRequest({
+    officeId: office, beneficiaryId: r.beneficiaryId, kind: "report", payload: r as unknown as Record<string, unknown>,
+    summary: `${r.reportType} report (${r.period}) — ${beneName(r.beneficiaryId)}`,
+  });
+  return { queued: true };
+}
+
+export function submitCardAdd(beneficiaryId: string, url: string, season: SeasonKind = getCurrentSeason()): SubmitResult {
+  const office = getBeneficiary(beneficiaryId)?.officeId ?? "";
+  if (actorIsAdminFor(office)) {
+    addSeasonalCard(beneficiaryId, url, season);
+    return { queued: false };
+  }
+  createChangeRequest({
+    officeId: office, beneficiaryId, kind: "card_add", payload: { url, season },
+    summary: `Add ${season} card — ${beneName(beneficiaryId)}`,
+  });
+  return { queued: true };
+}
+
+export function submitCardRemove(beneficiaryId: string, cardId: string): SubmitResult {
+  const office = getBeneficiary(beneficiaryId)?.officeId ?? "";
+  if (actorIsAdminFor(office)) {
+    removeSeasonalCard(beneficiaryId, cardId);
+    return { queued: false };
+  }
+  createChangeRequest({
+    officeId: office, beneficiaryId, kind: "card_remove", payload: { cardId },
+    summary: `Remove a card — ${beneName(beneficiaryId)}`,
+  });
+  return { queued: true };
+}
 
 // -----------------------------------------------------------------------------
 // File saving (routes to Supabase Storage in real mode, base64 in demo)

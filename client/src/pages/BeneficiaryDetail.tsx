@@ -5,20 +5,20 @@ import { useState } from "react";
 import { Link, useParams } from "wouter";
 import {
   getBeneficiary,
-  updateBeneficiary,
   computeAge,
   listReports,
-  createReport,
   getLeaving,
-  startLeaving,
   getOffice,
   saveImageFile,
   saveImageDataUrl,
   downloadFile,
   approveBeneficiary,
   seasonalCardLabel,
-  addSeasonalCard,
-  removeSeasonalCard,
+  submitBeneficiaryEdit,
+  submitLeaving,
+  submitReport,
+  submitCardAdd,
+  submitCardRemove,
 } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { EditTextField, EditSelectField } from "@/components/EditField";
@@ -102,8 +102,10 @@ export default function BeneficiaryDetail() {
   const leaving = getLeaving(b.id);
 
   const save = (patch: Record<string, unknown>) => {
-    updateBeneficiary(b.id, patch);
+    const res = submitBeneficiaryEdit(b.id, patch as Partial<typeof b>);
     rerender();
+    if (res.queued) toast.info("Change sent to your office admin for approval.");
+    else toast.success("Saved.");
   };
 
   const approve = () => {
@@ -309,9 +311,9 @@ function SeasonalCards({
     if (!file) return;
     try {
       const url = await saveImageFile(file, "card", b.officeId);
-      addSeasonalCard(b.id, url);
+      const res = submitCardAdd(b.id, url);
       onChange();
-      toast.success(`${uploadLabel} uploaded.`);
+      toast.success(res.queued ? `${uploadLabel} sent for approval.` : `${uploadLabel} uploaded.`);
     } catch {
       toast.error("Could not upload that image.");
     }
@@ -354,7 +356,7 @@ function SeasonalCards({
                   {canEdit && (
                     <button
                       type="button"
-                      onClick={() => { removeSeasonalCard(b.id, c.id); onChange(); toast.success("Card removed."); }}
+                      onClick={() => { const res = submitCardRemove(b.id, c.id); onChange(); toast.success(res.queued ? "Card removal sent for approval." : "Card removed."); }}
                       className="grid h-7 w-7 place-items-center rounded-md text-rose-600 hover:bg-rose-50"
                       title="Remove"
                     >
@@ -463,7 +465,7 @@ function ReportsTab({
       toast.error(`A ${REPORT_TYPE_LABELS[reportType]} report for ${period} (Year ${cycleYear}) already exists.`);
       return;
     }
-    createReport({
+    const res = submitReport({
       beneficiaryId,
       reportType,
       period,
@@ -479,7 +481,7 @@ function ReportsTab({
     setPhoto("");
     setOpen(false);
     onChange();
-    toast.success("Progress report added.");
+    toast.success(res.queued ? "Report sent for admin approval." : "Progress report added.");
   };
 
   return (
@@ -595,10 +597,10 @@ function LeavingTab({
   const [explanation, setExplanation] = useState("");
 
   const submit = () => {
-    startLeaving({ beneficiaryId, reason, explanation, date: new Date().toISOString().slice(0, 10), authorUserId: user?.id ?? "u-editor" });
+    const res = submitLeaving({ beneficiaryId, reason, explanation, date: new Date().toISOString().slice(0, 10), authorUserId: user?.id ?? "u-editor" });
     setOpen(false);
     onChange();
-    toast.success("Leaving record started.");
+    toast.success(res.queued ? "Leaving request sent for admin approval." : "Leaving record started.");
   };
 
   if (leaving) {

@@ -131,7 +131,7 @@ export default function OfficeDetail() {
       )}
 
       {tab === "reports" && (
-        <ReportsTab officeId={office.id} editable={editable} uploaderId={user?.id ?? ""} onChange={rerender} />
+        <ReportsTab officeId={office.id} editable={approver} uploaderId={user?.id ?? ""} onChange={rerender} />
       )}
     </div>
   );

@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import { useState, type ReactNode } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { ROLE_LABELS } from "@/lib/options";
-import { getOffice } from "@/lib/api";
+import { getOffice, listBeneficiaries, listPendingChangeRequests } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import ChangePasswordDialog from "./ChangePasswordDialog";
 import {
@@ -12,6 +12,7 @@ import {
   Users2,
   Users,
   BarChart3,
+  ClipboardCheck,
   LogOut,
   KeyRound,
 } from "lucide-react";
@@ -40,8 +41,19 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const { user, logout, canManageUsers } = useAuth();
   const [pwOpen, setPwOpen] = useState(false);
 
+  const isManager = user?.role === "super_admin" || user?.role === "office_admin";
   const nav = [...NAV];
+  if (isManager) nav.push({ href: "/approvals", label: "Approvals", icon: ClipboardCheck });
   if (canManageUsers) nav.push({ href: "/users", label: "Users", icon: Users });
+
+  // Count of items waiting for this manager's approval (for the nav badge).
+  let pendingCount = 0;
+  if (isManager) {
+    const scope = (oid: string) => user?.role === "super_admin" || oid === user?.officeId;
+    pendingCount =
+      listBeneficiaries().filter((b) => b.approvalStatus === "pending" && scope(b.officeId)).length +
+      listPendingChangeRequests().filter((c) => scope(c.officeId)).length;
+  }
 
   const office = user?.officeId ? getOffice(user.officeId) : null;
 
@@ -87,6 +99,11 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                 >
                   <Icon className="h-4 w-4" />
                   {item.label}
+                  {item.href === "/approvals" && pendingCount > 0 && (
+                    <span className="ml-0.5 rounded-full bg-amber-400 px-1.5 text-[11px] font-semibold text-amber-950">
+                      {pendingCount}
+                    </span>
+                  )}
                 </Link>
               );
             })}

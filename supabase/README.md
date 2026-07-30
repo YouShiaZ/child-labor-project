@@ -20,6 +20,10 @@ supabase/
 
 ## 2. Create the schema
 - SQL Editor → paste `schema.sql` → **Run** (once, on a fresh DB).
+- Then run each file in `supabase/migrations/` **in order** (`001_…`, `002_…`).
+  Migration 002 adds the approval queue and the editor write-hardening
+  (editors can't change approved data directly — everything goes through an
+  office-admin approval).
 - Creates all tables, the RLS policies (the app's per-office permissions enforced
   in the database), the `photos` / `cards` / `reports` storage buckets, and the
   two offices + program row.

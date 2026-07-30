@@ -187,3 +187,26 @@ export interface LeavingRecord {
   date: string;
   authorUserId: string;
 }
+
+// -----------------------------------------------------------------------------
+// Change requests (approval queue)
+// -----------------------------------------------------------------------------
+// Anything an editor does to an APPROVED record becomes a pending change request
+// that the office admin (or super admin) must approve before it takes effect.
+export type ChangeKind = "update" | "leave" | "report" | "card_add" | "card_remove";
+export type ChangeStatus = "pending" | "approved" | "rejected";
+
+export interface ChangeRequest {
+  id: string;
+  officeId: OfficeId;
+  beneficiaryId: string;
+  kind: ChangeKind;
+  payload: Record<string, unknown>;
+  summary: string;
+  status: ChangeStatus;
+  requestedByUserId: string;
+  requestedByName: string;
+  createdAt: string;
+  reviewedByUserId?: string;
+  reviewedAt?: string;
+}
