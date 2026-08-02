@@ -6,6 +6,7 @@ import { ROLE_LABELS } from "@/lib/options";
 import { getOffice, listBeneficiaries, listPendingChangeRequests } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import ChangePasswordDialog from "./ChangePasswordDialog";
+import OfflineStatus from "./OfflineStatus";
 import {
   LayoutDashboard,
   Building2,
@@ -110,6 +111,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           </nav>
 
           <div className="ml-auto flex items-center gap-3">
+            <OfflineStatus />
             {user && (
               <DropdownMenu>
                 <DropdownMenuTrigger className="flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-white/10 focus:outline-none">

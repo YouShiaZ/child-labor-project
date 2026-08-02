@@ -36,7 +36,10 @@ import type {
 } from "./types";
 import { SUPABASE_ENABLED, BUCKETS } from "./supabase";
 import * as db from "./db";
+import * as offline from "./offline";
 import { toast } from "sonner";
+
+export { isOnline, pendingCount, isSyncing, subscribe as subscribeOffline } from "./offline";
 
 export { PROJECT_ID, OFFICE_CAIRO, OFFICE_MINYA, SUPABASE_ENABLED };
 
@@ -88,8 +91,14 @@ function loadDemo(): Store {
 // replaced by bootstrap(); in demo mode it comes from localStorage.
 let store: Store = SUPABASE_ENABLED ? seed() : loadDemo();
 
+let snapTimer: ReturnType<typeof setTimeout> | null = null;
 function persist() {
-  if (SUPABASE_ENABLED) return; // real mode persists to Supabase, not localStorage
+  if (SUPABASE_ENABLED) {
+    // Cache the whole store on-device so the app opens with data even offline.
+    if (snapTimer) clearTimeout(snapTimer);
+    snapTimer = setTimeout(() => { offline.saveSnapshot(store); }, 400);
+    return;
+  }
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify(store));
   } catch {
@@ -103,27 +112,89 @@ export function resetStore() {
   persist();
 }
 
-/** Load all data from Supabase into the in-memory store. Call once after login. */
+/** Load all data. Online → from Supabase (and cache it). Offline → from the
+ *  on-device cache. Call once after login. */
 export async function bootstrap(): Promise<void> {
   if (!SUPABASE_ENABLED) return;
-  const snap = await db.dbFetchAll();
-  store = {
-    offices: snap.offices,
-    users: snap.users,
-    projects: snap.projects.length ? snap.projects : seed().projects,
-    beneficiaries: snap.beneficiaries,
-    reports: snap.reports,
-    officeReports: snap.officeReports,
-    leaving: snap.leaving,
-    changeRequests: snap.changeRequests,
-  };
+  await offline.loadOutbox();
+
+  if (offline.isOnline()) {
+    try {
+      const snap = await db.dbFetchAll();
+      store = {
+        offices: snap.offices,
+        users: snap.users,
+        projects: snap.projects.length ? snap.projects : seed().projects,
+        beneficiaries: snap.beneficiaries,
+        reports: snap.reports,
+        officeReports: snap.officeReports,
+        leaving: snap.leaving,
+        changeRequests: snap.changeRequests,
+      };
+      await offline.saveSnapshot(store);
+    } catch (e) {
+      // Lost connection mid-load → fall back to the cached snapshot if we have one.
+      const cached = await offline.loadSnapshot<Store>();
+      if (cached) store = cached;
+      else throw e;
+    }
+    void flushOutbox();
+  } else {
+    const cached = await offline.loadSnapshot<Store>();
+    if (cached) store = cached;
+  }
 }
 
-// Fire-and-forget write to Supabase with a visible error if it fails.
-function push(action: () => Promise<unknown>) {
+/** Replay queued offline writes to Supabase and update image URLs in the store. */
+export async function flushOutbox(): Promise<void> {
   if (!SUPABASE_ENABLED) return;
+  await offline.flush((oldUrl, newUrl) => rewriteImageUrl(oldUrl, newUrl));
+  offline.saveSnapshot(store);
+}
+
+// After an offline-captured image is uploaded on sync, swap its data URL for the
+// real storage URL everywhere in the cached store.
+function rewriteImageUrl(oldUrl: string, newUrl: string) {
+  store.beneficiaries = store.beneficiaries.map((b) => ({
+    ...b,
+    photoUrl: b.photoUrl === oldUrl ? newUrl : b.photoUrl,
+    seasonalCards: (b.seasonalCards ?? []).map((c) => (c.url === oldUrl ? { ...c, url: newUrl } : c)),
+  }));
+  store.reports = store.reports.map((r) => (r.updatePhotoUrl === oldUrl ? { ...r, updatePhotoUrl: newUrl } : r));
+  store.changeRequests = store.changeRequests.map((cr) => {
+    const p = cr.payload as Record<string, unknown>;
+    let changed = false;
+    const np = { ...p };
+    for (const k of ["photoUrl", "url", "updatePhotoUrl"]) {
+      if (np[k] === oldUrl) { np[k] = newUrl; changed = true; }
+    }
+    return changed ? { ...cr, payload: np } : cr;
+  });
+}
+
+// Auto-sync the moment the connection returns.
+if (typeof window !== "undefined" && SUPABASE_ENABLED) {
+  window.addEventListener("online", () => { void flushOutbox(); });
+}
+
+function isNetworkError(e: unknown): boolean {
+  const m = (e as { message?: string })?.message ?? "";
+  return /fetch|network|failed to fetch|networkerror|load failed/i.test(m);
+}
+
+// Write to Supabase. If an `op` is given and we're offline (or the write fails
+// on the network), the op is queued to the outbox and replayed when back online.
+function push(action: () => Promise<unknown>, op?: offline.Op) {
+  if (!SUPABASE_ENABLED) return;
+  if (op && !offline.isOnline()) {
+    void offline.enqueue(op);
+    return;
+  }
   action().catch((e: unknown) => {
-    // Surface the real reason so problems can be diagnosed quickly.
+    if (op && (!offline.isOnline() || isNetworkError(e))) {
+      void offline.enqueue(op); // keep it; it'll sync when the connection returns
+      return;
+    }
     console.error("[CLP] Supabase write failed:", e);
     const err = e as { message?: string; details?: string; hint?: string; code?: string };
     const reason = [err?.message, err?.details, err?.hint].filter(Boolean).join(" — ");
@@ -275,7 +346,7 @@ export const createBeneficiary = (b: Omit<Beneficiary, "id" | "createdAt">) => {
   const ben: Beneficiary = { ...b, id: uid(), createdAt: today() };
   store.beneficiaries = [...store.beneficiaries, ben];
   persist();
-  push(() => db.dbInsertBeneficiary(ben));
+  push(() => db.dbInsertBeneficiary(ben), { kind: "insertBeneficiary", data: ben });
   logActivity("create", "beneficiary", ben.id, `Added beneficiary ${ben.firstName} ${ben.lastName} (${ben.beneficiaryNumber})`);
   return ben;
 };
@@ -286,7 +357,8 @@ export const updateBeneficiary = (id: string, patch: Partial<Beneficiary>) => {
   // seasonalCards changes are pushed via addSeasonalCard/removeSeasonalCard.
   const { seasonalCards, ...rest } = patch as Record<string, unknown>;
   if (Object.keys(rest).length) {
-    push(() => db.dbUpdateBeneficiary(id, rest));
+    const officeId = store.beneficiaries.find((x) => x.id === id)?.officeId ?? "";
+    push(() => db.dbUpdateBeneficiary(id, rest), { kind: "updateBeneficiary", id, patch: rest, officeId });
     // Skip the noisy approval update here; approveBeneficiary logs its own entry.
     if (!("approvalStatus" in rest && Object.keys(rest).length <= 3)) {
       logActivity("update", "beneficiary", id, `Updated ${beneName(id)}`);
@@ -311,7 +383,7 @@ export function addSeasonalCard(beneficiaryId: string, url: string, season?: Sea
     x.id === beneficiaryId ? { ...x, seasonalCards: [...(x.seasonalCards ?? []), card] } : x,
   );
   persist();
-  push(() => db.dbInsertCard(beneficiaryId, card));
+  push(() => db.dbInsertCard(beneficiaryId, card), { kind: "insertCard", beneficiaryId, card, officeId: b.officeId });
   logActivity("create", "card", beneficiaryId, `Added ${card.season} card (${card.year}) for ${beneName(beneficiaryId)}`);
 }
 
@@ -320,7 +392,7 @@ export function removeSeasonalCard(beneficiaryId: string, cardId: string) {
     x.id === beneficiaryId ? { ...x, seasonalCards: (x.seasonalCards ?? []).filter((c) => c.id !== cardId) } : x,
   );
   persist();
-  push(() => db.dbDeleteCard(cardId));
+  push(() => db.dbDeleteCard(cardId), { kind: "deleteCard", cardId });
   logActivity("delete", "card", beneficiaryId, `Removed a card from ${beneName(beneficiaryId)}`);
 }
 
@@ -336,7 +408,8 @@ export const createReport = (r: Omit<ProgressReport, "id">) => {
   const rep: ProgressReport = { ...r, id: uid() };
   store.reports = [...store.reports, rep];
   persist();
-  push(() => db.dbInsertReport(rep));
+  const rOffice = getBeneficiary(rep.beneficiaryId)?.officeId ?? "";
+  push(() => db.dbInsertReport(rep), { kind: "insertReport", report: rep, officeId: rOffice });
   logActivity("create", "report", rep.beneficiaryId, `Added ${rep.reportType} report (${rep.period}) for ${beneName(rep.beneficiaryId)}`);
   return rep;
 };
@@ -375,7 +448,7 @@ export const startLeaving = (l: Omit<LeavingRecord, "id">) => {
   const rec: LeavingRecord = { ...l, id: uid() };
   store.leaving = [...store.leaving, rec];
   persist();
-  push(() => db.dbInsertLeaving(rec));
+  push(() => db.dbInsertLeaving(rec), { kind: "insertLeaving", leaving: rec });
   logActivity("leave", "beneficiary", l.beneficiaryId, `Started leaving (${l.reason}) for ${beneName(l.beneficiaryId)}`);
   updateBeneficiary(l.beneficiaryId, { status: "leaving" }); // persists + pushes
   return rec;
@@ -405,7 +478,7 @@ function createChangeRequest(input: {
   };
   store.changeRequests = [...store.changeRequests, cr];
   persist();
-  push(() => db.dbInsertChangeRequest(cr));
+  push(() => db.dbInsertChangeRequest(cr), { kind: "insertChangeRequest", cr });
   logActivity("request", cr.kind, cr.beneficiaryId, `Requested approval: ${cr.summary}`);
   return cr;
 }
@@ -527,16 +600,19 @@ export function submitCardRemove(beneficiaryId: string, cardId: string): SubmitR
 // -----------------------------------------------------------------------------
 // File saving (routes to Supabase Storage in real mode, base64 in demo)
 // -----------------------------------------------------------------------------
-/** Save a cropped/generated image (data URL). Returns a URL to store. */
+/** Save a cropped/generated image (data URL). Returns a URL to store.
+ *  Offline: keeps the base64 image; it's uploaded to Storage on the next sync. */
 export async function saveImageDataUrl(dataUrl: string, kind: "photo" | "card", officeId: OfficeId): Promise<string> {
   if (!SUPABASE_ENABLED) return dataUrl;
+  if (!offline.isOnline()) return dataUrl; // deferred — resolved during flush()
   const bucket = kind === "card" ? BUCKETS.cards : BUCKETS.photos;
   return db.dbUploadImageDataUrl(dataUrl, bucket, officeId);
 }
 
-/** Save a picked image File. Returns a URL to store. */
+/** Save a picked image File. Returns a URL to store (deferred when offline). */
 export async function saveImageFile(file: File, kind: "photo" | "card", officeId: OfficeId): Promise<string> {
   if (!SUPABASE_ENABLED) return fileToDataUrl(file);
+  if (!offline.isOnline()) return fileToDataUrl(file); // deferred — uploaded on sync
   const bucket = kind === "card" ? BUCKETS.cards : BUCKETS.photos;
   return db.dbUploadFile(file, bucket, officeId);
 }
