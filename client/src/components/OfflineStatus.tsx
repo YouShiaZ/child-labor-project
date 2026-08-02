@@ -1,12 +1,13 @@
-// Child Labor Project — connection / sync indicator.
-// Shows only when it matters: offline, or there are unsynced changes, or syncing.
+// Child Labor Project — connection / sync indicator (click to open the Sync panel).
 import { useEffect, useState } from "react";
-import { isOnline, pendingCount, isSyncing, subscribeOffline } from "@/lib/api";
+import { isOnline, pendingCount, failedCount, isSyncing, subscribeOffline } from "@/lib/api";
 import { SUPABASE_ENABLED } from "@/lib/supabase";
-import { WifiOff, RefreshCw, UploadCloud } from "lucide-react";
+import { WifiOff, RefreshCw, UploadCloud, Check, AlertTriangle } from "lucide-react";
+import SyncPanel from "./SyncPanel";
 
 export default function OfflineStatus() {
   const [, force] = useState(0);
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     const rerender = () => force((n) => n + 1);
@@ -24,34 +25,42 @@ export default function OfflineStatus() {
 
   const online = isOnline();
   const pending = pendingCount();
+  const failed = failedCount();
   const syncing = isSyncing();
 
-  // All good and nothing pending → show nothing.
-  if (online && pending === 0 && !syncing) return null;
+  let icon = <Check className="h-3.5 w-3.5" />;
+  let label = "Synced";
+  let cls = "bg-white/10 text-primary-foreground/80 hover:bg-white/20";
 
-  let icon = <WifiOff className="h-3.5 w-3.5" />;
-  let label = "Offline";
-  let cls = "bg-amber-400/90 text-amber-950";
-
-  if (online && syncing) {
+  if (!online) {
+    icon = <WifiOff className="h-3.5 w-3.5" />;
+    label = pending > 0 ? `Offline · ${pending}` : "Offline";
+    cls = "bg-amber-400/90 text-amber-950 hover:bg-amber-400";
+  } else if (failed > 0) {
+    icon = <AlertTriangle className="h-3.5 w-3.5" />;
+    label = `${failed} failed`;
+    cls = "bg-rose-500/90 text-white hover:bg-rose-500";
+  } else if (syncing) {
     icon = <RefreshCw className="h-3.5 w-3.5 animate-spin" />;
     label = "Syncing…";
-    cls = "bg-white/15 text-white";
-  } else if (online && pending > 0) {
+    cls = "bg-white/15 text-white hover:bg-white/25";
+  } else if (pending > 0) {
     icon = <UploadCloud className="h-3.5 w-3.5" />;
     label = `${pending} to sync`;
-    cls = "bg-white/15 text-white";
-  } else if (!online) {
-    label = pending > 0 ? `Offline · ${pending} pending` : "Offline";
+    cls = "bg-white/15 text-white hover:bg-white/25";
   }
 
   return (
-    <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${cls}`}
-      title={online ? "Changes are being uploaded" : "Working offline — changes save on this device and upload when you're back online"}
-    >
-      {icon}
-      {label}
-    </span>
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors ${cls}`}
+        title="Open sync panel"
+      >
+        {icon}
+        <span className="hidden sm:inline">{label}</span>
+      </button>
+      <SyncPanel open={open} onOpenChange={setOpen} />
+    </>
   );
 }

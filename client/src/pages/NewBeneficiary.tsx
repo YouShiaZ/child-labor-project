@@ -140,7 +140,7 @@ export default function NewBeneficiary() {
     const created = createBeneficiary({
       projectId: "p-1",
       officeId: office.id,
-      beneficiaryNumber: nextBeneficiaryNumber(),
+      beneficiaryNumber: nextBeneficiaryNumber(office.id),
       status: "entry",
       approvalStatus: autoApprove ? "approved" : "pending",
       submittedByUserId: user?.id,

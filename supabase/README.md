@@ -20,10 +20,12 @@ supabase/
 
 ## 2. Create the schema
 - SQL Editor → paste `schema.sql` → **Run** (once, on a fresh DB).
-- Then run each file in `supabase/migrations/` **in order** (`001_…`, `002_…`).
-  Migration 002 adds the approval queue and the editor write-hardening
-  (editors can't change approved data directly — everything goes through an
-  office-admin approval).
+- Then run each file in `supabase/migrations/` **in order** (`001_…`, `002_…`, `003_…`).
+  - `002` — approval queue + editor write-hardening.
+  - `003` — per-office beneficiary codes (Cairo `CAI-…`, Minya `MIN-…`),
+    assigned by the database so they stay unique even with offline entry.
+    (It also re-codes existing beneficiaries into the new scheme — remove that
+    block first if you've already shared old codes.)
 - Creates all tables, the RLS policies (the app's per-office permissions enforced
   in the database), the `photos` / `cards` / `reports` storage buckets, and the
   two offices + program row.

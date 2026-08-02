@@ -22,8 +22,8 @@ export const OFFICE_CAIRO = "office-cairo";
 export const OFFICE_MINYA = "office-minya";
 
 export const offices: Office[] = [
-  { id: OFFICE_CAIRO, name: "Cairo Office", city: "Cairo", governorate: "Cairo", createdAt: "2024-01-10" },
-  { id: OFFICE_MINYA, name: "Minya Office", city: "Minya", governorate: "Minya", createdAt: "2024-01-10" },
+  { id: OFFICE_CAIRO, name: "Cairo Office", city: "Cairo", governorate: "Cairo", code: "CAI", createdAt: "2024-01-10" },
+  { id: OFFICE_MINYA, name: "Minya Office", city: "Minya", governorate: "Minya", code: "MIN", createdAt: "2024-01-10" },
 ];
 
 // The single program (kept for reporting / API contract).

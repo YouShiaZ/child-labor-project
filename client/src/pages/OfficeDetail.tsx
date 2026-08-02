@@ -225,9 +225,16 @@ function BeneficiariesTab({
     rows = rows.filter(
       (b) =>
         `${b.firstName} ${b.lastName}`.toLowerCase().includes(q) ||
-        b.beneficiaryNumber.toLowerCase().includes(q),
+        b.beneficiaryNumber.toLowerCase().includes(q) ||
+        (b.village ?? "").toLowerCase().includes(q),
     );
   }
+  // Newest entry first.
+  rows = [...rows].sort((a, b) =>
+    a.createdAt === b.createdAt
+      ? b.beneficiaryNumber.localeCompare(a.beneficiaryNumber)
+      : a.createdAt < b.createdAt ? 1 : -1,
+  );
 
   const approve = (id: string) => {
     approveBeneficiary(id, approverId);

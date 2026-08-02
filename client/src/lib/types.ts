@@ -12,6 +12,7 @@ export interface Office {
   name: string; // "Cairo Office"
   city: string; // "Cairo"
   governorate: string; // "Cairo" | "Minya"
+  code: string; // short prefix for beneficiary numbers, e.g. "CAI" / "MIN"
   createdAt: string;
 }
 

@@ -30,7 +30,8 @@ const uuid = () =>
 // Row <-> type mappers
 // -----------------------------------------------------------------------------
 const toOffice = (r: any): Office => ({
-  id: r.id, name: r.name, city: r.city, governorate: r.governorate, createdAt: r.created_at,
+  id: r.id, name: r.name, city: r.city, governorate: r.governorate,
+  code: r.code ?? "CLP", createdAt: r.created_at,
 });
 
 const toUser = (r: any): User => ({
@@ -205,17 +206,24 @@ export async function dbFetchAll(): Promise<DbSnapshot> {
 // -----------------------------------------------------------------------------
 // Mutations
 // -----------------------------------------------------------------------------
-export async function dbInsertBeneficiary(b: Beneficiary) {
+// Idempotent (upsert on id) so a retry after a dropped connection never
+// duplicates. Returns the DB-assigned per-office beneficiary number.
+export async function dbInsertBeneficiary(b: Beneficiary): Promise<string | undefined> {
   const sb = client();
-  const { error } = await sb.from("beneficiaries").insert(beneficiaryToRow(b));
+  const { data, error } = await sb
+    .from("beneficiaries")
+    .upsert(beneficiaryToRow(b), { onConflict: "id", ignoreDuplicates: true })
+    .select("beneficiary_number")
+    .maybeSingle();
   if (error) throw error;
   if (b.seasonalCards.length) {
     const rows = b.seasonalCards.map((c) => ({
       id: c.id, beneficiary_id: b.id, season: c.season, year: c.year, url: c.url, uploaded_at: c.uploadedAt,
     }));
-    const { error: e2 } = await sb.from("seasonal_cards").insert(rows);
+    const { error: e2 } = await sb.from("seasonal_cards").upsert(rows, { onConflict: "id", ignoreDuplicates: true });
     if (e2) throw e2;
   }
+  return data?.beneficiary_number ?? undefined;
 }
 
 export async function dbUpdateBeneficiary(id: string, patch: Record<string, unknown>) {
@@ -233,9 +241,9 @@ export async function dbUpdateBeneficiary(id: string, patch: Record<string, unkn
 
 export async function dbInsertCard(beneficiaryId: string, c: SeasonalCard) {
   const sb = client();
-  const { error } = await sb.from("seasonal_cards").insert({
+  const { error } = await sb.from("seasonal_cards").upsert({
     id: c.id, beneficiary_id: beneficiaryId, season: c.season, year: c.year, url: c.url, uploaded_at: c.uploadedAt,
-  });
+  }, { onConflict: "id", ignoreDuplicates: true });
   if (error) throw error;
 }
 
@@ -247,20 +255,20 @@ export async function dbDeleteCard(cardId: string) {
 
 export async function dbInsertReport(r: ProgressReport) {
   const sb = client();
-  const { error } = await sb.from("progress_reports").insert({
+  const { error } = await sb.from("progress_reports").upsert({
     id: r.id, beneficiary_id: r.beneficiaryId, report_type: r.reportType, period: r.period,
     cycle_year: r.cycleYear, date: r.date, update_photo_url: r.updatePhotoUrl ?? null,
     message_to_sponsor: r.messageToSponsor, beneficiary_update: r.beneficiaryUpdate, author_id: r.authorUserId,
-  });
+  }, { onConflict: "id", ignoreDuplicates: true });
   if (error) throw error;
 }
 
 export async function dbInsertOfficeReport(r: OfficeReport) {
   const sb = client();
-  const { error } = await sb.from("office_reports").insert({
+  const { error } = await sb.from("office_reports").upsert({
     id: r.id, office_id: r.officeId, year: r.year, title: r.title, file_name: r.fileName,
     file_type: r.fileType, file_url: r.fileUrl, uploaded_by: r.uploadedByUserId, uploaded_at: r.uploadedAt,
-  });
+  }, { onConflict: "id", ignoreDuplicates: true });
   if (error) throw error;
 }
 
@@ -272,20 +280,20 @@ export async function dbDeleteOfficeReport(id: string) {
 
 export async function dbInsertLeaving(l: LeavingRecord) {
   const sb = client();
-  const { error } = await sb.from("leaving_records").insert({
+  const { error } = await sb.from("leaving_records").upsert({
     id: l.id, beneficiary_id: l.beneficiaryId, reason: l.reason,
     explanation: l.explanation ?? null, date: l.date, author_id: l.authorUserId,
-  });
+  }, { onConflict: "id", ignoreDuplicates: true });
   if (error) throw error;
 }
 
 export async function dbInsertChangeRequest(cr: ChangeRequest) {
   const sb = client();
-  const { error } = await sb.from("change_requests").insert({
+  const { error } = await sb.from("change_requests").upsert({
     id: cr.id, office_id: cr.officeId, beneficiary_id: cr.beneficiaryId, kind: cr.kind,
     payload: cr.payload, summary: cr.summary, status: cr.status,
     requested_by: cr.requestedByUserId, requested_by_name: cr.requestedByName, created_at: cr.createdAt,
-  });
+  }, { onConflict: "id", ignoreDuplicates: true });
   if (error) throw error;
 }
 

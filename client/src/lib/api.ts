@@ -39,7 +39,11 @@ import * as db from "./db";
 import * as offline from "./offline";
 import { toast } from "sonner";
 
-export { isOnline, pendingCount, isSyncing, subscribe as subscribeOffline } from "./offline";
+export {
+  isOnline, pendingCount, failedCount, isSyncing, reauthNeeded,
+  getPending, getFailed, requeueFailed, discardFailed,
+  subscribe as subscribeOffline,
+} from "./offline";
 
 export { PROJECT_ID, OFFICE_CAIRO, OFFICE_MINYA, SUPABASE_ENABLED };
 
@@ -334,19 +338,32 @@ export const listBeneficiaries = (officeId?: OfficeId) =>
 
 export const getBeneficiary = (id: string) => store.beneficiaries.find((b) => b.id === id);
 
-export function nextBeneficiaryNumber(): string {
+/** Provisional per-office code, e.g. CAI-0005 / MIN-0005. The authoritative
+ *  number is assigned by the database on insert (unique per office). */
+export function nextBeneficiaryNumber(officeId: OfficeId): string {
+  const prefix = store.offices.find((o) => o.id === officeId)?.code || "CLP";
   const nums = store.beneficiaries
+    .filter((b) => b.officeId === officeId)
     .map((b) => Number(b.beneficiaryNumber.replace(/\D/g, "")))
     .filter((n) => !Number.isNaN(n));
   const next = (nums.length ? Math.max(...nums) : 0) + 1;
-  return "CLP-" + String(next).padStart(4, "0");
+  return `${prefix}-${String(next).padStart(4, "0")}`;
 }
 
 export const createBeneficiary = (b: Omit<Beneficiary, "id" | "createdAt">) => {
   const ben: Beneficiary = { ...b, id: uid(), createdAt: today() };
   store.beneficiaries = [...store.beneficiaries, ben];
   persist();
-  push(() => db.dbInsertBeneficiary(ben), { kind: "insertBeneficiary", data: ben });
+  push(async () => {
+    // The DB trigger assigns the authoritative per-office number; adopt it.
+    const assigned = await db.dbInsertBeneficiary(ben);
+    if (assigned && assigned !== ben.beneficiaryNumber) {
+      store.beneficiaries = store.beneficiaries.map((x) =>
+        x.id === ben.id ? { ...x, beneficiaryNumber: assigned } : x,
+      );
+      persist();
+    }
+  }, { kind: "insertBeneficiary", data: ben });
   logActivity("create", "beneficiary", ben.id, `Added beneficiary ${ben.firstName} ${ben.lastName} (${ben.beneficiaryNumber})`);
   return ben;
 };

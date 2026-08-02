@@ -32,10 +32,14 @@ export type Op =
   | { kind: "updateChangeRequestStatus"; id: string; status: string; reviewerId: string }
   | { kind: "logActivity"; entry: any };
 
-interface OutboxItem { id: string; op: Op; createdAt: number; }
+interface OutboxItem { id: string; op: Op; createdAt: number; attempts?: number; error?: string; }
+
+const FAILED_KEY = "clp_failed_v1";
 
 let outbox: OutboxItem[] = [];
+let failed: OutboxItem[] = [];
 let syncing = false;
+let needsReauth = false;
 let listeners: (() => void)[] = [];
 
 const uid = () =>
@@ -45,7 +49,41 @@ export function isOnline(): boolean {
   return typeof navigator === "undefined" ? true : navigator.onLine;
 }
 export function pendingCount(): number { return outbox.length; }
+export function failedCount(): number { return failed.length; }
 export function isSyncing(): boolean { return syncing; }
+export function reauthNeeded(): boolean { return needsReauth; }
+
+export function describeOp(op: Op): string {
+  switch (op.kind) {
+    case "insertBeneficiary": return `New beneficiary: ${op.data.firstName} ${op.data.lastName}`;
+    case "updateBeneficiary": return "Beneficiary edit";
+    case "insertCard": return "Add thank-you card";
+    case "deleteCard": return "Remove card";
+    case "insertReport": return "Add progress report";
+    case "insertLeaving": return "Start leaving";
+    case "insertChangeRequest": return `Approval request: ${op.cr.summary}`;
+    case "insertOfficeReport": return "Annual report upload";
+    default: return op.kind;
+  }
+}
+
+export function getPending() {
+  return outbox.map((i) => ({ id: i.id, summary: describeOp(i.op), at: i.createdAt }));
+}
+export function getFailed() {
+  return failed.map((i) => ({ id: i.id, summary: describeOp(i.op), error: i.error ?? "", at: i.createdAt }));
+}
+/** Move failed items back to the front of the outbox so a retry re-sends them. */
+export async function requeueFailed(): Promise<void> {
+  outbox = [...failed, ...outbox];
+  failed = [];
+  await saveOutbox();
+  await saveFailed();
+}
+export async function discardFailed(id?: string): Promise<void> {
+  failed = id ? failed.filter((f) => f.id !== id) : [];
+  await saveFailed();
+}
 
 export function subscribe(fn: () => void): () => void {
   listeners.push(fn);
@@ -56,10 +94,15 @@ function notify() { listeners.forEach((l) => l()); }
 // ---------------------------------------------------------------- Persistence
 export async function loadOutbox(): Promise<void> {
   try { outbox = (await get(OUTBOX_KEY)) ?? []; } catch { outbox = []; }
+  try { failed = (await get(FAILED_KEY)) ?? []; } catch { failed = []; }
   notify();
 }
 async function saveOutbox(): Promise<void> {
   try { await set(OUTBOX_KEY, outbox); } catch (e) { console.warn("[CLP] outbox save failed", e); }
+  notify();
+}
+async function saveFailed(): Promise<void> {
+  try { await set(FAILED_KEY, failed); } catch (e) { console.warn("[CLP] failed-list save failed", e); }
   notify();
 }
 
@@ -122,7 +165,7 @@ async function resolveImages(op: Op, onResolved: OnResolved): Promise<Op> {
 
 async function applyOp(op: Op): Promise<void> {
   switch (op.kind) {
-    case "insertBeneficiary": return db.dbInsertBeneficiary(op.data);
+    case "insertBeneficiary": { await db.dbInsertBeneficiary(op.data); return; }
     case "updateBeneficiary": return db.dbUpdateBeneficiary(op.id, op.patch);
     case "insertCard": return db.dbInsertCard(op.beneficiaryId, op.card);
     case "deleteCard": return db.dbDeleteCard(op.cardId);
@@ -138,22 +181,47 @@ async function applyOp(op: Op): Promise<void> {
   }
 }
 
-/** Replay the outbox to Supabase, in order. Safe to call repeatedly. */
+const isNetErr = (e: unknown) =>
+  /fetch|network|failed to fetch|networkerror|load failed|timeout/i.test((e as { message?: string })?.message ?? "");
+const isAuthErr = (e: unknown) => {
+  const s = ((e as { message?: string })?.message ?? "") + " " + ((e as { code?: string })?.code ?? "");
+  return /jwt|token|expired|not authenticated|unauthorized|401|pgrst301|pgrst303/i.test(s);
+};
+const errMsg = (e: unknown) => {
+  const x = e as { message?: string; details?: string; hint?: string };
+  return [x?.message, x?.details, x?.hint].filter(Boolean).join(" — ") || "unknown error";
+};
+
+/** Replay the outbox to Supabase, in order. Safe to call repeatedly.
+ *  - network error → stop and retry later (keeps everything queued)
+ *  - session expired → stop and flag re-auth
+ *  - permanent error → move that one op to the failed list and keep going */
 export async function flush(onResolved: OnResolved = () => {}): Promise<void> {
   if (!SUPABASE_ENABLED || syncing || !isOnline() || outbox.length === 0) return;
   syncing = true;
+  needsReauth = false;
   notify();
   try {
     while (outbox.length > 0 && isOnline()) {
       const item = outbox[0];
-      const op = await resolveImages(item.op, onResolved);
-      await applyOp(op);
-      outbox.shift();
-      await saveOutbox();
+      try {
+        const op = await resolveImages(item.op, onResolved);
+        await applyOp(op);
+        outbox.shift();
+        await saveOutbox();
+      } catch (e) {
+        if (isNetErr(e)) break; // lost connection — keep queued, retry later
+        if (isAuthErr(e)) { needsReauth = true; break; } // session expired — ask re-login
+        // Permanent error (e.g. validation/permission) → dead-letter and continue.
+        console.error("[CLP] op failed permanently, moving to failed list:", e);
+        item.attempts = (item.attempts ?? 0) + 1;
+        item.error = errMsg(e);
+        failed.push(item);
+        outbox.shift();
+        await saveOutbox();
+        await saveFailed();
+      }
     }
-  } catch (e) {
-    // Stop on the first failure (likely lost connection); keep the rest queued.
-    console.error("[CLP] sync paused, will retry:", e);
   } finally {
     syncing = false;
     notify();
