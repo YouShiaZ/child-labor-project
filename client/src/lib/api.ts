@@ -116,6 +116,22 @@ export function resetStore() {
   persist();
 }
 
+// Fetch everything from Supabase into the store and cache it.
+async function refreshFromServer(): Promise<void> {
+  const snap = await db.dbFetchAll();
+  store = {
+    offices: snap.offices,
+    users: snap.users,
+    projects: snap.projects.length ? snap.projects : seed().projects,
+    beneficiaries: snap.beneficiaries,
+    reports: snap.reports,
+    officeReports: snap.officeReports,
+    leaving: snap.leaving,
+    changeRequests: snap.changeRequests,
+  };
+  await offline.saveSnapshot(store);
+}
+
 /** Load all data. Online → from Supabase (and cache it). Offline → from the
  *  on-device cache. Call once after login. */
 export async function bootstrap(): Promise<void> {
@@ -124,18 +140,7 @@ export async function bootstrap(): Promise<void> {
 
   if (offline.isOnline()) {
     try {
-      const snap = await db.dbFetchAll();
-      store = {
-        offices: snap.offices,
-        users: snap.users,
-        projects: snap.projects.length ? snap.projects : seed().projects,
-        beneficiaries: snap.beneficiaries,
-        reports: snap.reports,
-        officeReports: snap.officeReports,
-        leaving: snap.leaving,
-        changeRequests: snap.changeRequests,
-      };
-      await offline.saveSnapshot(store);
+      await refreshFromServer();
     } catch (e) {
       // Lost connection mid-load → fall back to the cached snapshot if we have one.
       const cached = await offline.loadSnapshot<Store>();
@@ -149,11 +154,16 @@ export async function bootstrap(): Promise<void> {
   }
 }
 
-/** Replay queued offline writes to Supabase and update image URLs in the store. */
+/** Replay queued offline writes to Supabase, then refresh so DB-assigned values
+ *  (e.g. per-office codes for records created offline) appear. */
 export async function flushOutbox(): Promise<void> {
   if (!SUPABASE_ENABLED) return;
   await offline.flush((oldUrl, newUrl) => rewriteImageUrl(oldUrl, newUrl));
   offline.saveSnapshot(store);
+  // Everything uploaded → pull the authoritative rows back (real codes, etc.).
+  if (offline.isOnline() && offline.pendingCount() === 0) {
+    try { await refreshFromServer(); } catch { /* stay on cache */ }
+  }
 }
 
 // After an offline-captured image is uploaded on sync, swap its data URL for the
